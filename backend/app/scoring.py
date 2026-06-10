@@ -10,10 +10,17 @@ from collections import defaultdict
 from app.schemas import ClusterGroup, Judgment, MarketResult, VendorResult, Verdict
 
 
+# Named verdict weights — surfaced as constants so the credibility math is
+# auditable on stage: "a SUPPORTED claim is worth 1.0, a SELF_REPORTED_ONLY
+# claim is worth 0.4, a NO_PUBLIC_RECEIPT_FOUND claim is worth 0."
+W_SUPPORTED: float = 1.0
+W_SELF_REPORTED: float = 0.4
+W_NO_RECEIPT: float = 0.0
+
 VERDICT_WEIGHT: dict[Verdict, float] = {
-    Verdict.SUPPORTED: 1.0,
-    Verdict.SELF_REPORTED_ONLY: 0.4,
-    Verdict.NO_PUBLIC_RECEIPT_FOUND: 0.0,
+    Verdict.SUPPORTED: W_SUPPORTED,
+    Verdict.SELF_REPORTED_ONLY: W_SELF_REPORTED,
+    Verdict.NO_PUBLIC_RECEIPT_FOUND: W_NO_RECEIPT,
 }
 
 
@@ -28,6 +35,13 @@ vendor_credibility = score_vendor
 
 
 def claim_inflation_index(vendors: list[VendorResult]) -> float:
+    """Average per-vendor 'claims-made ÷ claims-substantiated' ratio.
+
+    Per-vendor: n_claims / max(n_supported, 1). The max(_, 1) keeps the math
+    bounded when no SUPPORTED claims exist (the result reads as the raw claim
+    count — "5 claims, 0 receipts" → 5x puffery, the most striking outcome,
+    not a crash). The human-readable explainer is stored on
+    MarketResult.telemetry_summary['claim_inflation_note']."""
     scored = [v for v in vendors if v.judgments]
     if not scored:
         return 0.0
@@ -41,6 +55,20 @@ def claim_inflation_index(vendors: list[VendorResult]) -> float:
     if not inflations:
         return 0.0
     return round(sum(inflations) / len(inflations), 2)
+
+
+def claim_inflation_note(vendors: list[VendorResult]) -> str:
+    """Human-readable explainer for the index: 'N claims / M supported'.
+    Always honest — when M=0, says so plainly."""
+    total_claims = sum(len(v.judgments) for v in vendors)
+    total_supported = sum(
+        1 for v in vendors for j in v.judgments if j.verdict == Verdict.SUPPORTED
+    )
+    if total_claims == 0:
+        return "no claims made"
+    if total_supported == 0:
+        return f"{total_claims} claims, 0 with public receipts"
+    return f"{total_claims} claims / {total_supported} supported"
 
 
 def _normalize_metric(raw: str) -> str:

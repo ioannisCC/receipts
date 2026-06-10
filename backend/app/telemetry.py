@@ -13,7 +13,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncIterator, Optional
+from typing import Any, AsyncIterator, Optional
 
 import orjson
 
@@ -33,6 +33,19 @@ class TelemetryBus:
         self._subscribers: list[asyncio.Queue[TelemetryEvent]] = []
         self._log_path = LOGS_DIR / f"run_{self.run_id}.jsonl"
         self.partial_result: Optional[object] = None  # set by orchestrator as vendors complete
+        # Running totals accumulated on every emit(). The orchestrator snapshots
+        # this into MarketResult.telemetry_summary at the end of the sweep so
+        # the dashboard has one source of truth and the JSONL log is the
+        # authoritative replay.
+        self.totals: dict[str, Any] = {
+            "n_events": 0,
+            "n_llm_calls": 0,
+            "n_escalated": 0,
+            "total_tokens_in": 0,
+            "total_tokens_out": 0,
+            "total_cost_usd": 0.0,
+            "stage_counts": {},
+        }
 
     def subscribe(self) -> asyncio.Queue[TelemetryEvent]:
         q: asyncio.Queue[TelemetryEvent] = asyncio.Queue()
@@ -56,6 +69,19 @@ class TelemetryBus:
             # we report was measured — a swallowed log line is recoverable, a
             # dead sweep is not.
             pass
+
+        # Update running totals. Counted even when no subscriber is connected,
+        # because the orchestrator reads this snapshot at the end of the sweep.
+        t = self.totals
+        t["n_events"] += 1
+        t["total_tokens_in"] += event.tokens_in
+        t["total_tokens_out"] += event.tokens_out
+        t["total_cost_usd"] += event.cost_usd
+        if event.model:
+            t["n_llm_calls"] += 1
+        if event.escalated:
+            t["n_escalated"] += 1
+        t["stage_counts"][event.stage] = t["stage_counts"].get(event.stage, 0) + 1
 
         for q in list(self._subscribers):
             try:

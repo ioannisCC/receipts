@@ -60,7 +60,12 @@ def _strip_json(text: str) -> str:
     return text.strip()
 
 
-def _parse_judgment(text: str, claim_id: str, escalated: bool) -> Judgment | None:
+def _parse_judgment(
+    text: str,
+    claim_id: str,
+    escalated: bool,
+    evidence_urls: list[str] | None = None,
+) -> Judgment | None:
     try:
         data = json.loads(_strip_json(text))
         verdict_str = str(data.get("verdict", "")).upper().strip()
@@ -71,12 +76,32 @@ def _parse_judgment(text: str, claim_id: str, escalated: bool) -> Judgment | Non
             verdict = Verdict.SELF_REPORTED_ONLY
         else:
             verdict = Verdict.NO_PUBLIC_RECEIPT_FOUND
+
+        rationale = str(data.get("rationale", ""))
+        receipts = [str(r) for r in (data.get("receipts") or []) if isinstance(r, (str, int))]
+
+        # Filter to URLs that actually appeared in the searched evidence — stops
+        # the model from inventing citations.
+        if evidence_urls is not None:
+            allowed = set(evidence_urls)
+            receipts = [r for r in receipts if r in allowed]
+
+        # Enforce verdict/receipts consistency. Both inconsistencies are bad
+        # demo material: a NO_PUBLIC_RECEIPT_FOUND judgment carrying a receipt
+        # is a self-contradiction on stage; a SUPPORTED judgment with no
+        # quotable URL is a hallucination tell.
+        if verdict == Verdict.NO_PUBLIC_RECEIPT_FOUND:
+            receipts = []
+        elif verdict == Verdict.SUPPORTED and not receipts:
+            verdict = Verdict.SELF_REPORTED_ONLY
+            rationale = (rationale + " [demoted: SUPPORTED claimed without citable receipt]").strip()
+
         return Judgment(
             claim_id=claim_id,
             verdict=verdict,
             confidence=float(data.get("confidence", 0.5)),
-            rationale=str(data.get("rationale", "")),
-            receipts=list(data.get("receipts", [])),
+            rationale=rationale,
+            receipts=receipts,
             escalated=escalated,
         )
     except Exception:
@@ -115,7 +140,10 @@ async def judge(
                 m.model = result.model
                 m.cost_usd = cost_usd(result.model, result.tokens_in, result.tokens_out)
 
-                judgment = _parse_judgment(result.text, claim.claim_id, escalated=False)
+                judgment = _parse_judgment(
+                    result.text, claim.claim_id, escalated=False,
+                    evidence_urls=evidence.urls,
+                )
                 if judgment and judgment.confidence >= threshold:
                     return judgment
             except Exception:
@@ -136,17 +164,23 @@ async def judge(
             m.model = result.model
             m.cost_usd = cost_usd(result.model, result.tokens_in, result.tokens_out)
 
-            judgment = _parse_judgment(result.text, claim.claim_id, escalated=not naive)
+            judgment = _parse_judgment(
+                result.text, claim.claim_id, escalated=not naive,
+                evidence_urls=evidence.urls,
+            )
             if judgment:
                 return judgment
         except Exception:
             pass
 
-    # Hard fallback — never let a judge failure kill a vendor
+    # Hard fallback — never let a judge failure kill a vendor. Default to
+    # SELF_REPORTED_ONLY (not NO_PUBLIC_RECEIPT_FOUND) per CLAUDE.md: an
+    # infrastructure failure is never grounds to imply absence of receipts.
     return Judgment(
         claim_id=claim.claim_id,
-        verdict=Verdict.NO_PUBLIC_RECEIPT_FOUND,
+        verdict=Verdict.SELF_REPORTED_ONLY,
         confidence=0.0,
-        rationale="Judge failed to return a parseable verdict.",
+        rationale="Judge failed to return a parseable verdict; defaulted to SELF_REPORTED_ONLY.",
+        receipts=[],
         escalated=not naive,
     )

@@ -39,7 +39,7 @@ async def run_vendor(
             ingest(url, bus=bus, vendor=vendor),
             timeout=settings.SCRAPE_TIMEOUT_S * 2,
         )
-    except asyncio.TimeoutError:
+    except Exception:
         markdown = ""
 
     if not markdown.strip():
@@ -53,7 +53,7 @@ async def run_vendor(
             extract(markdown, bus=bus, vendor=vendor),
             timeout=settings.LLM_TIMEOUT_S,
         )
-    except asyncio.TimeoutError:
+    except Exception:
         claims = []
 
     if not claims:
@@ -68,7 +68,7 @@ async def run_vendor(
                 hunt(vendor, claim, bus=bus),
                 timeout=settings.SCRAPE_TIMEOUT_S * 2,
             )
-        except asyncio.TimeoutError:
+        except Exception:
             from app.schemas import Evidence
             evidence = Evidence(claim_id=claim.claim_id)
         try:
@@ -76,7 +76,7 @@ async def run_vendor(
                 judge(claim, evidence, bus=bus, naive=naive, vendor=vendor),
                 timeout=settings.LLM_TIMEOUT_S * 2,
             )
-        except asyncio.TimeoutError:
+        except Exception:
             return None
 
     raw_judgments = await asyncio.gather(
@@ -90,7 +90,7 @@ async def run_vendor(
             advise(vendor, judgments, bus=bus),
             timeout=settings.LLM_TIMEOUT_S,
         )
-    except asyncio.TimeoutError:
+    except Exception:
         advice_text = ""
 
     result = VendorResult(
@@ -126,7 +126,17 @@ async def run_market(
 
     async def _bounded(vendor: str, url: str) -> VendorResult:
         async with sem:
-            return await run_vendor(vendor, url, bus=bus, naive=naive)
+            try:
+                return await run_vendor(vendor, url, bus=bus, naive=naive)
+            except Exception as e:
+                # Belt and suspenders: run_vendor itself doesn't raise, but if
+                # an upstream library does, we never lose the slot.
+                return VendorResult(
+                    vendor=vendor,
+                    url=url,
+                    status="error",
+                    advice=f"{type(e).__name__}: {e}"[:240],
+                )
 
     tasks = [asyncio.create_task(_bounded(v, u)) for v, u in pairs]
 
@@ -137,6 +147,31 @@ async def run_market(
         bus.partial_result = market
 
     finalize_market(market)
+
+    # Snapshot telemetry totals into the result so the dashboard has one source
+    # of truth alongside the JSONL replay log.
+    from app.scoring import claim_inflation_note
+    n_llm = bus.totals.get("n_llm_calls", 0)
+    n_esc = bus.totals.get("n_escalated", 0)
+    market.telemetry_summary = {
+        "run_id": bus.run_id,
+        "n_vendors": len(market.vendors),
+        "vendor_status_counts": dict(_count_by(v.status for v in market.vendors)),
+        "n_claims": sum(len(v.judgments) for v in market.vendors),
+        "n_escalated_judgments": sum(
+            1 for v in market.vendors for j in v.judgments if j.escalated
+        ),
+        "market_escalation_rate": round((n_esc / n_llm) if n_llm else 0.0, 4),
+        "claim_inflation_note": claim_inflation_note(market.vendors),
+        "naive_mode": naive,
+        "bus_totals": {**bus.totals, "stage_counts": dict(bus.totals["stage_counts"])},
+    }
+
     bus.partial_result = market
     bus.emit(TelemetryEvent(stage="market_done", vendor=None))
     return market
+
+
+def _count_by(items):
+    from collections import Counter
+    return Counter(items)
