@@ -135,3 +135,83 @@ async def chat(
         tier="premium",
         raw=resp,
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Magnific image generation — ADDITIVE. chat() above stays byte-identical.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Docs (2026-06-10): https://docs.magnific.com/api-reference/mystic/post-mystic
+# POST  https://api.magnific.com/v1/ai/mystic           → {data:{task_id, status}}
+# GET   https://api.magnific.com/v1/ai/mystic/{task_id} → {data:{status, generated:[url]}}
+# Header drift from the dispatch: docs say x-magnific-api-key (we use that), the
+# dispatch said x-freepik-api-key. Env var name stays FREEPIK_API_KEY (Freepik
+# owns Magnific; many users hold one key for both ecosystems).
+MAGNIFIC_BASE = "https://api.magnific.com/v1/ai/mystic"
+
+# Credits per generation — rough estimate (docs don't publish a credit table).
+# Mystic at 1k/widescreen ≈ 25 credits. Recorded in telemetry payload so we can
+# correct this once we see real billing.
+MAGNIFIC_CREDIT_ESTIMATE: dict[str, int] = {"1k": 25, "2k": 50, "4k": 100}
+
+
+async def generate_image(
+    prompt: str,
+    *,
+    model: str = "realism",
+    resolution: str = "1k",
+    aspect_ratio: str = "widescreen_16_9",
+    timeout_s: float = 60.0,
+    poll_interval_s: float = 1.5,
+) -> Optional[str]:
+    """Magnific Mystic text-to-image. Returns the first image URL on COMPLETED,
+    or None on failure / timeout / missing key. Never raises.
+
+    The caller is responsible for telemetry wrapping (so the stage name is the
+    caller's, not generic 'magnific') and for caching."""
+    import httpx
+
+    api_key = settings.FREEPIK_API_KEY
+    if not api_key:
+        return None
+
+    headers = {"x-magnific-api-key": api_key, "Content-Type": "application/json"}
+    body: dict[str, Any] = {
+        "prompt": prompt,
+        "model": model,
+        "resolution": resolution,
+        "aspect_ratio": aspect_ratio,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as http:
+            r = await http.post(MAGNIFIC_BASE, headers=headers, json=body)
+            if r.status_code >= 400:
+                return None
+            task_id = (r.json().get("data") or {}).get("task_id")
+            if not task_id:
+                return None
+
+            deadline = timeout_s
+            elapsed = 0.0
+            while elapsed < deadline:
+                await _sleep(poll_interval_s)
+                elapsed += poll_interval_s
+                pr = await http.get(f"{MAGNIFIC_BASE}/{task_id}", headers=headers)
+                if pr.status_code >= 400:
+                    continue
+                data = (pr.json().get("data") or {})
+                status = data.get("status")
+                if status == "COMPLETED":
+                    gen = data.get("generated") or []
+                    return gen[0] if gen else None
+                if status == "FAILED":
+                    return None
+            return None
+    except Exception:
+        return None
+
+
+async def _sleep(s: float) -> None:
+    import asyncio as _a
+    await _a.sleep(s)

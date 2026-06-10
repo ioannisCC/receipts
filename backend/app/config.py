@@ -38,5 +38,10 @@ class Settings(BaseSettings):
     # Akamai fallback: route all cheap-tier calls to Anthropic when Akamai is unavailable.
     CHEAP_FALLBACK_TO_PREMIUM: bool = False
 
+    # Magnific (Freepik) image gen — for the honest-ad stage. Eligibility floor:
+    # using a second model family alongside Akamai-tier inference.
+    FREEPIK_API_KEY: str = ""
+    HONEST_AD_TOP_N: int = 3
+
 
 settings = Settings()

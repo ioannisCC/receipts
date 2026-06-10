@@ -72,6 +72,10 @@ class VendorResult(BaseModel):
     claim_quality_score: Optional[float] = None
     trend_delta_pct: Optional[int] = None
     trend_new_unsubstantiated: list[str] = Field(default_factory=list)
+    # Honest-ad stage: Magnific image URL + the SUPPORTED claim texts that
+    # React overlays on top of it as crisp DOM text (never pixels).
+    honest_ad_url: Optional[str] = None
+    honest_ad_claims: list[str] = Field(default_factory=list)
 
 
 class MarketResult(BaseModel):

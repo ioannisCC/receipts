@@ -31,6 +31,8 @@ interface VendorResult {
   judgments: Judgment[]
   credibility_score: number | null
   advice: string | null
+  honest_ad_url: string | null
+  honest_ad_claims: string[]
 }
 
 interface MarketResult {
@@ -215,6 +217,33 @@ function VendorCard({ v, animIn }: { v: VendorResult; animIn: boolean }) {
           {v.status === 'unreachable'
             ? 'Could not load this vendor page'
             : 'No specific claims found on this page'}
+        </div>
+      )}
+
+      {/* Honest ad — Magnific backdrop + DOM-text claim overlay. The image
+          never typesets the figures; the numbers below are real React text,
+          inspect-element legible. */}
+      {v.honest_ad_url && v.honest_ad_claims.length > 0 && (
+        <div
+          title="The honest ad — what their marketing would say if it could only quote what's publicly substantiated."
+          style={{
+            position: 'relative', aspectRatio: '16 / 9',
+            backgroundImage: `url(${v.honest_ad_url})`, backgroundSize: 'cover', backgroundPosition: 'center',
+            borderRadius: 10, overflow: 'hidden', margin: '6px 0 12px',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
+          }}>
+          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.15) 45%, rgba(0,0,0,0.7) 100%)' }} />
+          <div style={{ position: 'relative', padding: '14px 18px', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', color: '#fff' }}>
+            <div style={{ fontSize: 10, opacity: 0.85, letterSpacing: 1, textTransform: 'uppercase', fontWeight: 700 }}>
+              The honest ad · {v.vendor}
+            </div>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, opacity: 0.9 }}>What we can prove:</div>
+              {v.honest_ad_claims.map((claim, i) => (
+                <div key={i} style={{ fontSize: 13, marginBottom: 4, lineHeight: 1.4, fontWeight: 600 }}>✓ {claim}</div>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 

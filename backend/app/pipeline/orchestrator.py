@@ -148,6 +148,25 @@ async def run_market(
 
     finalize_market(market)
 
+    # Honest-ad stage. Picks top-N candidates by (claims_made - supported), each
+    # wrapped in its own try/except so a Magnific failure greys that vendor's
+    # ad without ever stalling the sweep. Sequential by design — limits credit
+    # burn during dev and concurrent Magnific calls aren't useful at N=1-3.
+    from app.pipeline.honest_ad import generate_honest_ad, pick_ad_candidates
+
+    candidates = pick_ad_candidates(list(market.vendors), top_n=settings.HONEST_AD_TOP_N)
+    for vendor in candidates:
+        try:
+            url, claims = await asyncio.wait_for(
+                generate_honest_ad(vendor, bus=bus),
+                timeout=90.0,
+            )
+            vendor.honest_ad_url = url
+            vendor.honest_ad_claims = claims
+        except Exception:
+            # Grey-card the ad; sweep continues.
+            pass
+
     # Snapshot telemetry totals into the result so the dashboard has one source
     # of truth alongside the JSONL replay log.
     from app.scoring import claim_inflation_note
