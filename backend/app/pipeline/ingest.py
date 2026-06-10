@@ -10,6 +10,7 @@ from __future__ import annotations
 import httpx
 import trafilatura  # type: ignore[import-untyped]
 
+from app import cache
 from app.config import settings
 from app.telemetry import TelemetryBus, measure
 
@@ -27,6 +28,10 @@ async def ingest(url: str, *, bus: TelemetryBus, vendor: str | None = None) -> s
     string and leave the per-vendor status='unreachable' decision to the
     orchestrator (this stage's contract is text-or-empty, not text-or-raise)."""
     async with measure(bus, stage="ingest", vendor=vendor) as _m:
+        cached = cache.get("ingest", url)
+        if cached is not None:
+            return cached
+
         try:
             async with httpx.AsyncClient(
                 timeout=settings.SCRAPE_TIMEOUT_S,
@@ -44,7 +49,10 @@ async def ingest(url: str, *, bus: TelemetryBus, vendor: str | None = None) -> s
                 ) or ""
                 if len(text.strip()) < 200:
                     text = await _jina_fallback(http, url) or text
-                return text[:15_000]
+                result = text[:15_000]
+                if result.strip():
+                    cache.set("ingest", url, result)
+                return result
         except Exception:
             return ""
 

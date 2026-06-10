@@ -8,6 +8,9 @@ Never fetch G2 / Capterra directly — they block. Use Tavily snippets only."""
 
 from __future__ import annotations
 
+import asyncio
+
+from app import cache
 from app.config import settings
 from app.schemas import Claim, Evidence
 from app.telemetry import TelemetryBus, measure
@@ -25,8 +28,16 @@ async def hunt(
     async with measure(bus, stage="hunt", vendor=vendor, claim_id=claim.claim_id) as _m:
         if not settings.TAVILY_API_KEY and not settings.TAVILY_API_KEY_BACKUP:
             return Evidence(claim_id=claim.claim_id)
+
+        cache_key = f"{vendor}:{claim.claim_id}"
+        cached = cache.get("hunt", cache_key)
+        if cached is not None:
+            return Evidence(**cached)
+
         try:
-            return await _search(vendor, claim)
+            result = await _search(vendor, claim)
+            cache.set("hunt", cache_key, result.model_dump())
+            return result
         except Exception:
             return Evidence(claim_id=claim.claim_id)
 
@@ -42,11 +53,7 @@ async def _search(vendor: str, claim: Claim) -> Evidence:
         f"{vendor} customer review {claim.magnitude or ''} verified",
     ]
 
-    snippets: list[str] = []
-    urls: list[str] = []
-    seen: set[str] = set()
-
-    for query in queries:
+    async def _one(query: str) -> list[dict]:
         try:
             resp = await client.search(
                 query,
@@ -54,16 +61,25 @@ async def _search(vendor: str, claim: Claim) -> Evidence:
                 max_results=4,
                 include_answer=False,
             )
-            for r in resp.get("results", []):
-                url = r.get("url", "")
-                if url in seen:
-                    continue
-                seen.add(url)
-                content = r.get("content", "").strip()
-                if content:
-                    snippets.append(content[:400])
-                    urls.append(url)
+            return resp.get("results", [])
         except Exception:
-            continue
+            return []
+
+    all_results = await asyncio.gather(*[_one(q) for q in queries])
+
+    snippets: list[str] = []
+    urls: list[str] = []
+    seen: set[str] = set()
+
+    for results in all_results:
+        for r in results:
+            url = r.get("url", "")
+            if url in seen:
+                continue
+            seen.add(url)
+            content = r.get("content", "").strip()
+            if content:
+                snippets.append(content[:400])
+                urls.append(url)
 
     return Evidence(claim_id=claim.claim_id, snippets=snippets, urls=urls)
