@@ -17,12 +17,12 @@ ingest + tavily caches keep it fast — about 5 seconds).
 from __future__ import annotations
 
 import asyncio
-import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.cache import set as cache_set, _key as cache_path  # noqa: E402
 from app.pipeline.honest_ad import (  # noqa: E402
     _cache_key,
     _supported_claim_texts,
@@ -74,21 +74,21 @@ async def main() -> int:
         print(f"{vendor} has 0 SUPPORTED claims this run — not a candidate.")
         return 1
 
+    # Go through cache.set so we use the EXACT same path-derivation the live
+    # pipeline uses (it double-hashes; writing the file manually misses).
     key = _cache_key(vendor, supported, MAGNIFIC_MODEL)
-    cache_dir = Path(__file__).resolve().parents[1] / "app" / "caches" / "honest_ad"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    cache_file = cache_dir / f"{key}.json"
-
     payload = {"url": url, "claims": supported}
-    cache_file.write_text(json.dumps(payload, indent=2))
+    cache_set("honest_ad", key, payload)
+
+    cache_file = cache_path("honest_ad", key)
 
     print(f"\n✓ cached")
     print(f"  vendor:    {vendor}")
     print(f"  model:     {MAGNIFIC_MODEL}")
     print(f"  claims:    {supported}")
-    print(f"  cache key: {key}")
-    print(f"  file:      {cache_file}")
-    print(f"  url:       {url}")
+    print(f"  honest_ad key (input): {key}")
+    print(f"  on-disk path:          {cache_file}")
+    print(f"  url:                   {url}")
     print(f"\nThe next audit will hit this cache for {vendor} — no Magnific call.")
     await asyncio.sleep(0.2)
     return 0
