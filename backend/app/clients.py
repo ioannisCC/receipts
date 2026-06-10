@@ -92,14 +92,26 @@ async def chat(
 
     if tier == "cheap":
         model = settings.CHEAP_MODEL
+        # Qwen3 thinking mode must be disabled via /no_think in the system prompt.
+        no_think_messages = []
+        injected = False
+        for m in messages:
+            if m["role"] == "system" and not injected:
+                no_think_messages.append({**m, "content": "/no_think\n" + m["content"]})
+                injected = True
+            else:
+                no_think_messages.append(m)
+        if not injected:
+            no_think_messages.insert(0, {"role": "system", "content": "/no_think"})
         resp = await cheap_client().chat.completions.create(
             model=model,
-            messages=messages,  # type: ignore[arg-type]
+            messages=no_think_messages,  # type: ignore[arg-type]
             max_tokens=max_tokens,
             temperature=temperature,
             timeout=timeout,
         )
-        text = (resp.choices[0].message.content or "") if resp.choices else ""
+        msg = resp.choices[0].message if resp.choices else None
+        text = (msg.content or "") if msg else ""
         usage = resp.usage
         return ChatResult(
             text=text,
