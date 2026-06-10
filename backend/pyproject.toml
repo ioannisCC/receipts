@@ -1,0 +1,23 @@
+[project]
+name = "receipts"
+version = "0.1.0"
+description = "Receipts — Burden of Proof. Cost-aware inference cascade for market claim auditing."
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "sse-starlette",
+    "httpx",
+    "trafilatura",
+    "openai",
+    "anthropic",
+    "tavily-python",
+    "pydantic",
+    "pydantic-settings",
+    "tenacity",
+    "python-dotenv",
+    "orjson",
+]
+
+[tool.uv]
+package = false

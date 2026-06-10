@@ -1,0 +1,17 @@
+.venv/
+.env
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+.pytest_cache/
+.ruff_cache/
+backend/app/caches/*
+!backend/app/caches/.gitkeep
+backend/app/logs/*
+!backend/app/logs/.gitkeep
+
+# Internal — never publish
+CLAUDE.md
+reference/
+*.docx

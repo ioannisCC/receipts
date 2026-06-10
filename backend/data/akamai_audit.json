@@ -1,0 +1,20 @@
+{
+  "category": "AI inference clouds",
+  "vendor": "Akamai Inference Cloud",
+  "url": "https://www.akamai.com/products/akamai-inference-cloud-platform",
+  "known_public_claims": [
+    {
+      "claim": "Up to 3x throughput improvement",
+      "metric": "throughput",
+      "magnitude": "3x",
+      "claim_type": "performance"
+    },
+    {
+      "claim": "Up to 2.5x latency reduction",
+      "metric": "latency",
+      "magnitude": "2.5x",
+      "claim_type": "performance"
+    }
+  ],
+  "notes": "Akamai is the sponsor and our first audit target the moment Layer 1 turns green. Both claims have published methodology — they are SUPPORTED if Stage B finds the methodology page."
+}
