@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, MouseEvent as RMouseEvent } from 'react'
 
-// ── Types ──────────────────────────────────────────────────────────────────
+// ── Types ────────────────────────────────────────────────────────────────────
 
 interface TelemetryEvent {
   stage: string
@@ -27,7 +27,7 @@ interface VendorResult {
   vendor: string
   url: string
   status: string
-  claims: { claim: string; metric: string | null; magnitude: string | null }[]
+  claims: { claim: string; metric: string | null; magnitude: string | null; claim_id: string }[]
   judgments: Judgment[]
   credibility_score: number | null
   advice: string | null
@@ -37,6 +37,7 @@ interface MarketResult {
   category: string
   vendors: VendorResult[]
   claim_inflation_index: number
+  telemetry_summary?: Record<string, unknown>
 }
 
 interface RunStats {
@@ -48,55 +49,89 @@ interface RunStats {
   elapsedMs: number
 }
 
-// ── Preset vendor lists ─────────────────────────────────────────────────────
+// ── Data ─────────────────────────────────────────────────────────────────────
 
-const PRESETS: Record<string, [string, string][]> = {
-  'AI Support Agents': [
-    ['Intercom Fin', 'https://www.intercom.com/fin'],
-    ['Decagon', 'https://decagon.ai'],
-    ['Zendesk AI', 'https://www.zendesk.com/service/ai'],
-    ['Forethought', 'https://forethought.ai'],
-    ['Tidio', 'https://www.tidio.com'],
-    ['Freshdesk AI', 'https://www.freshworks.com/freshdesk'],
-  ],
-  'AI SDRs': [
-    ['11x', 'https://www.11x.ai'],
-    ['Artisan', 'https://www.artisan.co'],
-    ['Qualified', 'https://www.qualified.com'],
-    ['AiSDR', 'https://aisdr.com'],
-    ['Regie.ai', 'https://www.regie.ai'],
-    ['Outreach', 'https://www.outreach.io'],
-  ],
-}
-
-// ── Helpers ─────────────────────────────────────────────────────────────────
+const EXAMPLE_TEXT =
+`Intercom Fin, https://www.intercom.com/fin
+Decagon, https://decagon.ai
+Zendesk AI, https://www.zendesk.com/service/ai
+Forethought, https://forethought.ai
+Tidio, https://www.tidio.com
+Freshdesk AI, https://www.freshworks.com/freshdesk`
 
 const VERDICT_META = {
-  SUPPORTED: { emoji: '✅', label: 'Supported', color: '#22c55e' },
-  SELF_REPORTED_ONLY: { emoji: '⚠️', label: 'Self-reported', color: '#f59e0b' },
-  NO_PUBLIC_RECEIPT_FOUND: { emoji: '❌', label: 'No receipt', color: '#ef4444' },
+  SUPPORTED: {
+    label: 'Verified',
+    color: 'var(--green)',
+    bg: '#dcfce7',
+    description: 'An independent third party (review site, news article, case study) confirmed this claim with real data',
+  },
+  SELF_REPORTED_ONLY: {
+    label: 'Unverified',
+    color: 'var(--yellow)',
+    bg: '#fef9c3',
+    description: 'The vendor only said this about themselves — no outside source has confirmed it',
+  },
+  NO_PUBLIC_RECEIPT_FOUND: {
+    label: 'No evidence',
+    color: 'var(--red)',
+    bg: '#fee2e2',
+    description: 'We searched the web and found nothing backing this claim',
+  },
 }
 
-function scoreColor(score: number | null): string {
-  if (score === null) return '#64748b'
-  if (score >= 0.7) return '#22c55e'
-  if (score >= 0.4) return '#f59e0b'
-  return '#ef4444'
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function parseVendorText(raw: string): [string, string][] {
+  return raw.split('\n').map(l => l.trim()).filter(Boolean).flatMap(line => {
+    const sep = line.includes('\t') ? '\t' : ','
+    const parts = line.split(sep).map(s => s.trim())
+    if (parts.length < 2) return []
+    const url = parts[parts.length - 1]
+    if (!url.startsWith('http')) return []
+    return [[parts[0], url] as [string, string]]
+  })
 }
 
-function fmtCost(n: number): string {
-  return `$${n.toFixed(4)}`
+function scoreColor(score: number | null) {
+  if (score === null) return 'var(--muted)'
+  if (score >= 0.7) return 'var(--green)'
+  if (score >= 0.4) return 'var(--yellow)'
+  return 'var(--red)'
 }
 
-function fmtMs(ms: number): string {
-  if (ms < 1000) return `${Math.round(ms)}ms`
-  return `${(ms / 1000).toFixed(1)}s`
+function fmtCost(n: number) { return `$${n.toFixed(4)}` }
+function fmtMs(ms: number) { return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s` }
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+function Tip({ text }: { text: string }) {
+  return (
+    <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
+      {text}
+    </div>
+  )
 }
 
-// ── VendorCard ───────────────────────────────────────────────────────────────
+function StatBox({ label, value, tip, mono }: { label: string; value: string; tip: string; mono?: boolean }) {
+  return (
+    <div style={{ textAlign: 'center', padding: '14px 8px' }}>
+      <div style={{
+        fontSize: mono ? 19 : 18, fontWeight: 700,
+        fontFamily: mono ? 'var(--mono)' : undefined,
+        color: 'var(--text)',
+      }}>
+        {value}
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2, fontWeight: 600 }}>{label}</div>
+      <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2, padding: '0 4px', lineHeight: 1.4 }}>{tip}</div>
+    </div>
+  )
+}
 
 function VendorCard({ v, animIn }: { v: VendorResult; animIn: boolean }) {
-  const [open, setOpen] = useState(false)
+  const [adviceOpen, setAdviceOpen] = useState(false)
+  const [claimsOpen, setClaimsOpen] = useState(false)
   const score = v.credibility_score
   const pct = score !== null ? Math.round(score * 100) : null
 
@@ -105,89 +140,140 @@ function VendorCard({ v, animIn }: { v: VendorResult; animIn: boolean }) {
     {} as Record<string, number>
   )
 
+  const judgeMap = Object.fromEntries(v.judgments.map(j => [j.claim_id, j]))
+
   return (
     <div style={{
       background: 'var(--surface)',
-      border: '1px solid var(--border)',
+      border: `1px solid ${pct !== null ? scoreColor(score) + '60' : 'var(--border)'}`,
       borderRadius: 12,
       padding: '16px 18px',
-      transition: 'transform 0.3s ease, opacity 0.3s ease',
+      boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+      transition: 'opacity 0.4s ease, transform 0.4s ease',
       opacity: animIn ? 1 : 0,
-      transform: animIn ? 'translateY(0)' : 'translateY(16px)',
+      transform: animIn ? 'translateY(0)' : 'translateY(20px)',
     }}>
+      {/* Header row */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
         <div>
-          <div style={{ fontWeight: 700, fontSize: 15 }}>{v.vendor}</div>
-          <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2 }}>{v.url}</div>
+          <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)' }}>{v.vendor}</div>
+          <a href={v.url} target="_blank" rel="noreferrer"
+            style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2, display: 'block', textDecoration: 'none' }}>
+            {v.url}
+          </a>
         </div>
-        {pct !== null && (
-          <div style={{
-            background: scoreColor(score),
-            color: '#000',
-            fontWeight: 800,
-            fontSize: 18,
-            borderRadius: 8,
-            padding: '4px 10px',
-            lineHeight: 1.2,
-          }}>
+        {pct !== null ? (
+          <div
+            title="Score out of 100 — how many of their claims were independently verified"
+            style={{
+              background: scoreColor(score), color: '#fff', fontWeight: 800,
+              fontSize: 18, borderRadius: 8, padding: '4px 12px', lineHeight: 1.2, cursor: 'help',
+            }}>
             {pct}%
           </div>
+        ) : (
+          <div style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic' }}>checking...</div>
         )}
       </div>
 
       {/* Score bar */}
       {pct !== null && (
-        <div style={{ height: 4, background: 'var(--border)', borderRadius: 2, marginBottom: 12, overflow: 'hidden' }}>
+        <div title="Bar shows the credibility score"
+          style={{ height: 5, background: 'var(--surface2)', borderRadius: 3, marginBottom: 12, overflow: 'hidden', cursor: 'help' }}>
           <div style={{ height: '100%', width: `${pct}%`, background: scoreColor(score), transition: 'width 0.8s ease' }} />
         </div>
       )}
 
+      {/* Status message for failed pages */}
       {v.status !== 'ok' && (
         <div style={{ color: 'var(--muted)', fontSize: 12, fontStyle: 'italic', marginBottom: 8 }}>
-          {v.status === 'unreachable' ? '⚡ Page unreachable' : '⚡ No quantified claims found'}
+          {v.status === 'unreachable'
+            ? 'Could not load this vendor page'
+            : 'No specific claims found on this page'}
         </div>
       )}
 
       {/* Verdict badges */}
       {v.judgments.length > 0 && (
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10 }}>
-          {Object.entries(counts).map(([verdict, count]) => {
-            const meta = VERDICT_META[verdict as keyof typeof VERDICT_META]
-            return (
-              <span key={verdict} style={{
-                background: 'var(--surface2)',
-                border: `1px solid ${meta.color}40`,
-                color: meta.color,
-                borderRadius: 6,
-                padding: '2px 8px',
-                fontSize: 11,
-                fontWeight: 600,
-              }}>
-                {meta.emoji} {count} {meta.label}
-              </span>
-            )
-          })}
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 6 }}>
+            Hover each badge to see what it means
+          </div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {Object.entries(counts).map(([verdict, count]) => {
+              const meta = VERDICT_META[verdict as keyof typeof VERDICT_META]
+              return (
+                <span key={verdict} title={meta.description} style={{
+                  background: meta.bg,
+                  border: `1px solid ${meta.color}`,
+                  color: meta.color,
+                  borderRadius: 6, padding: '2px 9px', fontSize: 11, fontWeight: 600, cursor: 'help',
+                }}>
+                  {count} {meta.label}
+                </span>
+              )
+            })}
+          </div>
         </div>
       )}
 
-      {/* Expand advice */}
-      {v.advice && (
-        <button
-          onClick={() => setOpen(x => !x)}
-          style={{
+      {/* Expand: individual claims */}
+      {v.claims.length > 0 && (
+        <>
+          <button onClick={() => setClaimsOpen(x => !x)} style={{
             background: 'none', border: '1px solid var(--border)', color: 'var(--muted)',
-            borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer',
-            marginTop: 4,
-          }}
-        >
-          {open ? '▲ Hide advice' : '▼ Buyer advice'}
+            borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', marginRight: 6,
+          }}>
+            {claimsOpen ? 'Hide claims' : `Show ${v.claims.length} claims`}
+          </button>
+          {claimsOpen && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 8 }}>
+                Each claim was pulled from their site, searched online, and then judged
+              </div>
+              {v.claims.map((c) => {
+                const j = judgeMap[c.claim_id]
+                if (!j) return null
+                const meta = VERDICT_META[j.verdict]
+                return (
+                  <div key={c.claim_id} style={{
+                    padding: '8px 12px', marginBottom: 6,
+                    background: meta.bg, borderRadius: 8, borderLeft: `3px solid ${meta.color}`,
+                  }}>
+                    <div style={{ fontSize: 12, color: 'var(--text)', marginBottom: 4 }}>{c.claim}</div>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <span style={{ fontSize: 11, color: meta.color, fontWeight: 600 }}>{meta.label}</span>
+                      <span style={{ fontSize: 10, color: 'var(--muted)' }}>{Math.round(j.confidence * 100)}% confident</span>
+                      {j.escalated && (
+                        <span
+                          title="The first AI was unsure — a more powerful AI re-checked this claim"
+                          style={{ fontSize: 10, color: '#7c3aed', cursor: 'help' }}>
+                          double-checked
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 10, color: '#6b7280', marginTop: 4 }}>{j.rationale}</div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Expand: buyer questions */}
+      {v.advice && (
+        <button onClick={() => setAdviceOpen(x => !x)} style={{
+          background: 'none', border: '1px solid var(--border)', color: 'var(--muted)',
+          borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', marginTop: 6,
+        }}>
+          {adviceOpen ? 'Hide questions' : 'Questions to ask before buying'}
         </button>
       )}
-      {open && v.advice && (
+      {adviceOpen && v.advice && (
         <div style={{
-          marginTop: 10, padding: '10px 12px', background: 'var(--surface2)',
-          borderRadius: 8, fontSize: 12, color: '#cbd5e1', lineHeight: 1.7,
-          whiteSpace: 'pre-wrap',
+          marginTop: 8, padding: '10px 14px', background: 'var(--surface2)',
+          borderRadius: 8, fontSize: 12, color: '#374151', lineHeight: 1.7, whiteSpace: 'pre-wrap',
         }}>
           {v.advice}
         </div>
@@ -196,39 +282,27 @@ function VendorCard({ v, animIn }: { v: VendorResult; animIn: boolean }) {
   )
 }
 
-// ── Live ticker ──────────────────────────────────────────────────────────────
-
-function StatBox({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div style={{ textAlign: 'center' }}>
-      <div style={{
-        fontSize: mono ? 22 : 20,
-        fontWeight: 700,
-        fontFamily: mono ? 'var(--mono)' : undefined,
-        color: '#e2e8f0',
-      }}>{value}</div>
-      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{label}</div>
-    </div>
-  )
-}
-
-// ── Main App ─────────────────────────────────────────────────────────────────
+// ── App ───────────────────────────────────────────────────────────────────────
 
 type Phase = 'idle' | 'running' | 'done'
 
 export default function App() {
-  const [category, setCategory] = useState<string>('AI Support Agents')
+  const [customText, setCustomText] = useState('')
+  const [customError, setCustomError] = useState('')
   const [phase, setPhase] = useState<Phase>('idle')
-  const [stats, setStats] = useState<RunStats>({ totalCost: 0, totalTokens: 0, escalations: 0, totalJudgments: 0, calls: 0, elapsedMs: 0 })
+  const [stats, setStats] = useState<RunStats>({
+    totalCost: 0, totalTokens: 0, escalations: 0, totalJudgments: 0, calls: 0, elapsedMs: 0,
+  })
   const [vendors, setVendors] = useState<VendorResult[]>([])
   const [animedIn, setAnimedIn] = useState<Set<string>>(new Set())
   const [marketResult, setMarketResult] = useState<MarketResult | null>(null)
-  const [runId, setRunId] = useState<string | null>(null)
+  const [sidebarWidth, setSidebarWidth] = useState(320)
 
   const startTimeRef = useRef<number>(0)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const evtRef = useRef<EventSource | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const draggingRef = useRef(false)
 
   const stopTimers = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current)
@@ -245,16 +319,17 @@ export default function App() {
       const sorted = [...data.vendors].sort((a, b) => (b.credibility_score ?? 0) - (a.credibility_score ?? 0))
       setVendors(sorted)
       setMarketResult(data)
-      // animate new cards in
-      setAnimedIn(prev => {
-        const next = new Set(prev)
-        sorted.forEach(v => next.add(v.vendor))
-        return next
-      })
+      setAnimedIn(prev => { const n = new Set(prev); sorted.forEach(v => n.add(v.vendor)); return n })
     } catch { /* ignore */ }
   }, [])
 
   const startAudit = useCallback(async () => {
+    const vendorUrls = parseVendorText(customText)
+    if (vendorUrls.length === 0) {
+      setCustomError('No companies found. Format: Company Name, https://website.com')
+      return
+    }
+    setCustomError('')
     stopTimers()
     setPhase('running')
     setStats({ totalCost: 0, totalTokens: 0, escalations: 0, totalJudgments: 0, calls: 0, elapsedMs: 0 })
@@ -267,29 +342,21 @@ export default function App() {
       setStats(s => ({ ...s, elapsedMs: Date.now() - startTimeRef.current }))
     }, 250)
 
-    const payload = {
-      category,
-      vendor_urls: PRESETS[category],
-      naive: false,
-      n: PRESETS[category].length,
-    }
-
     try {
       const res = await fetch('/audit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({
+          category: 'Custom',
+          vendor_urls: vendorUrls,
+          naive: false,
+          n: vendorUrls.length,
+        }),
       })
       const accepted = await res.json()
-      setRunId(accepted.run_id)
-
-      // Poll results every 3s
       pollRef.current = setInterval(() => fetchResults(accepted.run_id), 3000)
-
-      // SSE for telemetry
       const es = new EventSource(accepted.stream_url)
       evtRef.current = es
-
       es.addEventListener('telemetry', (e) => {
         const ev: TelemetryEvent = JSON.parse(e.data)
         setStats(s => ({
@@ -300,186 +367,270 @@ export default function App() {
           totalJudgments: ev.stage.startsWith('judge') ? s.totalJudgments + 1 : s.totalJudgments,
           calls: s.calls + 1,
         }))
-        if (ev.stage === 'market_done') {
-          setPhase('done')
-          stopTimers()
-          fetchResults(accepted.run_id)
-        }
+        if (ev.stage === 'market_done') { setPhase('done'); stopTimers(); fetchResults(accepted.run_id) }
       })
-
-      es.onerror = () => {
-        setPhase('done')
-        stopTimers()
-        fetchResults(accepted.run_id)
-      }
+      es.onerror = () => { setPhase('done'); stopTimers(); fetchResults(accepted.run_id) }
     } catch (err) {
-      console.error(err)
-      setPhase('idle')
-      stopTimers()
+      console.error(err); setPhase('idle'); stopTimers()
     }
-  }, [category, stopTimers, fetchResults])
+  }, [customText, stopTimers, fetchResults])
+
+  // Drag-to-resize sidebar
+  const startDrag = useCallback((e: RMouseEvent) => {
+    e.preventDefault()
+    draggingRef.current = true
+    const onMove = (ev: MouseEvent) => {
+      if (!draggingRef.current) return
+      setSidebarWidth(w => Math.max(240, Math.min(560, w + ev.movementX)))
+    }
+    const onUp = () => { draggingRef.current = false; window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp) }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }, [])
 
   useEffect(() => () => stopTimers(), [stopTimers])
 
+  const activeVendors = parseVendorText(customText)
   const sorted = [...vendors].sort((a, b) => (b.credibility_score ?? -1) - (a.credibility_score ?? -1))
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* ── Header ── */}
+
+      {/* Header */}
       <header style={{
-        padding: '20px 32px',
-        borderBottom: '1px solid var(--border)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        background: 'var(--surface)',
+        padding: '14px 32px', borderBottom: '1px solid var(--border)', background: 'var(--surface)',
+        display: 'flex', alignItems: 'center', gap: 14,
+        boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
       }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span style={{ fontSize: 28, fontWeight: 900, letterSpacing: '-1px', color: 'var(--accent)' }}>RECEIPTS</span>
-            <span style={{
-              background: 'var(--accent)',
-              color: '#fff',
-              fontSize: 9,
-              fontWeight: 800,
-              padding: '2px 6px',
-              borderRadius: 4,
-              letterSpacing: '0.05em',
-            }}>BETA</span>
-          </div>
-          <div style={{ color: 'var(--muted)', fontSize: 12, marginTop: 2 }}>
-            Pics or it didn't happen — for enterprise AI
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {Object.keys(PRESETS).map(k => (
-            <button
-              key={k}
-              onClick={() => setCategory(k)}
-              disabled={phase === 'running'}
-              style={{
-                background: category === k ? 'var(--accent)' : 'var(--surface2)',
-                color: category === k ? '#fff' : 'var(--muted)',
-                border: `1px solid ${category === k ? 'var(--accent)' : 'var(--border)'}`,
-                borderRadius: 8,
-                padding: '7px 14px',
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: phase === 'running' ? 'not-allowed' : 'pointer',
-                transition: 'all 0.15s',
-              }}
-            >{k}</button>
-          ))}
-          <button
-            onClick={startAudit}
-            disabled={phase === 'running'}
-            style={{
-              background: phase === 'running' ? 'var(--surface2)' : 'var(--accent)',
-              color: phase === 'running' ? 'var(--muted)' : '#fff',
-              border: 'none',
-              borderRadius: 8,
-              padding: '8px 20px',
-              fontSize: 13,
-              fontWeight: 700,
-              cursor: phase === 'running' ? 'not-allowed' : 'pointer',
-              marginLeft: 4,
-              transition: 'all 0.15s',
-            }}
-          >
-            {phase === 'running' ? '⏳ Auditing…' : phase === 'done' ? '🔄 Re-run' : '▶ Run Audit'}
-          </button>
-        </div>
+        <span style={{ fontSize: 22, fontWeight: 900, letterSpacing: '-0.5px', color: 'var(--accent)' }}>RECEIPTS</span>
+        <span style={{ background: 'var(--accent)', color: '#fff', fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 4 }}>BETA</span>
+        <span style={{ color: 'var(--muted)', fontSize: 12 }}>
+          Checks whether AI vendors can actually back up the claims on their website
+        </span>
       </header>
 
-      {/* ── Stats Bar ── */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(5, 1fr)',
-        gap: 1,
-        background: 'var(--border)',
-        borderBottom: '1px solid var(--border)',
-      }}>
-        {[
-          { label: 'Total Cost', value: fmtCost(stats.totalCost), mono: true },
-          { label: 'Elapsed', value: fmtMs(stats.elapsedMs) },
-          { label: 'LLM Calls', value: String(stats.calls) },
-          { label: 'Escalations', value: stats.totalJudgments > 0 ? `${stats.escalations}/${stats.totalJudgments}` : '—' },
-          { label: 'Vendors Done', value: `${vendors.length}/${PRESETS[category]?.length ?? 0}` },
-        ].map(({ label, value, mono }) => (
-          <div key={label} style={{ background: 'var(--surface)', padding: '14px 0' }}>
-            <StatBox label={label} value={value} mono={mono} />
+      {/* Two-column layout */}
+      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+
+        {/* Left sidebar: controls */}
+        <aside style={{
+          width: sidebarWidth, flexShrink: 0,
+          background: 'var(--surface)', padding: '24px 20px',
+          display: 'flex', flexDirection: 'column', gap: 22, overflowY: 'auto',
+        }}>
+
+          {/* Vendor input */}
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>
+              Which companies do you want to check?
+            </div>
+            <Tip text="Type one company per line: Name, https://website.com" />
+            <div style={{ marginTop: 10 }}>
+              <button
+                onClick={() => { setCustomText(EXAMPLE_TEXT); setCustomError('') }}
+                disabled={phase === 'running'}
+                style={{
+                  background: 'var(--surface2)', color: 'var(--accent)',
+                  border: `1.5px solid var(--accent)`, borderRadius: 7,
+                  padding: '6px 14px', fontSize: 12, fontWeight: 600,
+                  cursor: phase === 'running' ? 'not-allowed' : 'pointer',
+                  marginBottom: 10,
+                }}>
+                Try it out — load an example
+              </button>
+              <Tip text="Loads 6 real AI support tool companies so you can see how it works" />
+            </div>
+            <textarea
+              value={customText}
+              onChange={e => { setCustomText(e.target.value); setCustomError('') }}
+              disabled={phase === 'running'}
+              placeholder={'Company Name, https://website.com\nAnother Co, https://another.com'}
+              rows={8}
+              style={{
+                marginTop: 10, width: '100%', boxSizing: 'border-box',
+                background: 'var(--surface2)',
+                border: `1.5px solid ${customError ? 'var(--red)' : customText.trim() ? 'var(--accent)' : 'var(--border)'}`,
+                borderRadius: 8, color: 'var(--text)', fontSize: 13,
+                fontFamily: 'var(--mono)', padding: '10px 12px', resize: 'vertical', outline: 'none',
+                lineHeight: 1.6,
+              }}
+            />
+            {customError && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 5 }}>{customError}</div>}
+            {customText.trim() && !customError && (
+              <div style={{ color: 'var(--green)', fontSize: 12, marginTop: 5, fontWeight: 600 }}>
+                {activeVendors.length} {activeVendors.length === 1 ? 'company' : 'companies'} ready
+              </div>
+            )}
+            <label style={{
+              display: 'inline-block', marginTop: 10, background: 'var(--surface2)',
+              border: '1px solid var(--border)', borderRadius: 6, padding: '6px 14px',
+              fontSize: 12, color: 'var(--muted)', cursor: 'pointer',
+            }}>
+              Upload a CSV or TXT file
+              <input type="file" accept=".csv,.txt" style={{ display: 'none' }}
+                onChange={e => {
+                  const f = e.target.files?.[0]; if (!f) return
+                  const r = new FileReader()
+                  r.onload = ev => { setCustomText(ev.target?.result as string ?? ''); setCustomError('') }
+                  r.readAsText(f)
+                }} />
+            </label>
+            <Tip text="File format: one company per row — Name, URL" />
           </div>
-        ))}
-      </div>
 
-      {/* ── Main content ── */}
-      <main style={{ flex: 1, padding: '28px 32px', maxWidth: 1200, margin: '0 auto', width: '100%' }}>
+          {/* Run button */}
+          <div>
+            <button onClick={startAudit} disabled={phase === 'running'} style={{
+              width: '100%',
+              background: phase === 'running' ? 'var(--surface2)' : 'var(--accent)',
+              color: phase === 'running' ? 'var(--muted)' : '#fff',
+              border: 'none', borderRadius: 8, padding: '13px 0', fontSize: 15,
+              fontWeight: 700, cursor: phase === 'running' ? 'not-allowed' : 'pointer', transition: 'all 0.15s',
+            }}>
+              {phase === 'running' ? 'Checking...' : phase === 'done' ? 'Run Again' : 'Check Vendors'}
+            </button>
+            {activeVendors.length > 0
+              ? <Tip text={`Visits ${activeVendors.length} website${activeVendors.length !== 1 ? 's' : ''}, finds marketing claims, searches the web for proof, and scores each claim. Usually takes 60-90 seconds.`} />
+              : <Tip text="Add at least one company above to get started." />
+            }
+          </div>
 
-        {phase === 'idle' && (
-          <div style={{ textAlign: 'center', marginTop: 80 }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>🧾</div>
-            <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 8 }}>Ready to audit</div>
-            <div style={{ color: 'var(--muted)', maxWidth: 440, margin: '0 auto' }}>
-              Select a category above and click <strong style={{ color: 'var(--text)' }}>Run Audit</strong> to check which vendors can back up their claims.
+          {/* Legend */}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', letterSpacing: '0.08em', marginBottom: 10, textTransform: 'uppercase' }}>
+              What the labels mean
+            </div>
+            {Object.entries(VERDICT_META).map(([, m]) => (
+              <div key={m.label} style={{ marginBottom: 10 }}>
+                <div style={{
+                  display: 'inline-block', background: m.bg, color: m.color,
+                  fontWeight: 600, fontSize: 12, padding: '1px 8px', borderRadius: 5, border: `1px solid ${m.color}`,
+                }}>
+                  {m.label}
+                </div>
+                <div style={{ fontSize: 10, color: '#6b7280', marginTop: 3, lineHeight: 1.5 }}>{m.description}</div>
+              </div>
+            ))}
+            <div style={{ marginTop: 6 }}>
+              <div style={{ fontSize: 12, color: '#7c3aed', fontWeight: 600 }}>double-checked</div>
+              <div style={{ fontSize: 10, color: '#6b7280', marginTop: 3, lineHeight: 1.5 }}>
+                The first AI was not sure, so a stronger AI re-checked the claim
+              </div>
             </div>
           </div>
-        )}
+        </aside>
 
-        {(phase === 'running' || phase === 'done') && sorted.length === 0 && (
-          <div style={{ textAlign: 'center', marginTop: 80 }}>
-            <div style={{ fontSize: 36, marginBottom: 12 }}>
-              <span style={{ display: 'inline-block', animation: 'spin 1s linear infinite' }}>⏳</span>
-            </div>
-            <div style={{ color: 'var(--muted)' }}>Scraping vendor pages and verifying claims…</div>
+        {/* Drag handle */}
+        <div
+          onMouseDown={startDrag}
+          style={{
+            width: 6, flexShrink: 0,
+            background: 'var(--border)',
+            cursor: 'col-resize',
+            transition: 'background 0.15s',
+            position: 'relative',
+          }}
+          onMouseEnter={e => (e.currentTarget.style.background = 'var(--accent)')}
+          onMouseLeave={e => (e.currentTarget.style.background = 'var(--border)')}
+          title="Drag to resize panel"
+        />
+
+        {/* Right: stats + results */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+
+          {/* Stats bar */}
+          <div style={{
+            display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)',
+            gap: 1, background: 'var(--border)', borderBottom: '1px solid var(--border)', flexShrink: 0,
+          }}>
+            {[
+              { label: 'Total Cost', value: fmtCost(stats.totalCost), tip: 'How much this check cost in AI fees', mono: true },
+              { label: 'Time', value: fmtMs(stats.elapsedMs), tip: 'How long the check has been running' },
+              { label: 'AI Calls', value: String(stats.calls), tip: 'Total number of AI questions asked' },
+              { label: 'Double-checked', value: stats.totalJudgments > 0 ? `${stats.escalations}/${stats.totalJudgments}` : '—', tip: 'Claims that a second AI re-verified' },
+              { label: 'Progress', value: activeVendors.length > 0 ? `${vendors.length} / ${activeVendors.length}` : `${vendors.length} done`, tip: 'Companies finished vs total' },
+            ].map(({ label, value, tip, mono }) => (
+              <div key={label} style={{ background: 'var(--surface)' }}>
+                <StatBox label={label} value={value} tip={tip} mono={mono} />
+              </div>
+            ))}
           </div>
-        )}
 
-        {sorted.length > 0 && (
-          <>
-            {phase === 'done' && marketResult && (
-              <div style={{
-                marginBottom: 24,
-                padding: '14px 20px',
-                background: 'var(--surface)',
-                border: '1px solid var(--border)',
-                borderRadius: 10,
-                display: 'flex',
-                alignItems: 'center',
-                gap: 24,
-                flexWrap: 'wrap',
-              }}>
-                <div>
-                  <span style={{ color: 'var(--muted)', fontSize: 12 }}>Category</span>
-                  <div style={{ fontWeight: 700, fontSize: 16 }}>{marketResult.category}</div>
-                </div>
-                <div>
-                  <span style={{ color: 'var(--muted)', fontSize: 12 }}>Claim Inflation Index</span>
-                  <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--yellow)' }}>
-                    {marketResult.claim_inflation_index.toFixed(2)}×
-                  </div>
-                </div>
-                <div style={{ marginLeft: 'auto', color: 'var(--green)', fontWeight: 700 }}>
-                  ✓ Audit complete
+          {/* Results area */}
+          <main style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
+
+            {/* Idle */}
+            {phase === 'idle' && (
+              <div style={{ textAlign: 'center', marginTop: 60, color: 'var(--muted)' }}>
+                <div style={{ fontSize: 52, fontWeight: 900, color: 'var(--accent)', opacity: 0.12, marginBottom: 16 }}>?</div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', marginBottom: 10 }}>No results yet</div>
+                <div style={{ fontSize: 13, maxWidth: 380, margin: '0 auto', lineHeight: 1.7, color: 'var(--muted)' }}>
+                  Type in the companies you want to check on the left, or click{' '}
+                  <strong style={{ color: 'var(--text)' }}>Try it out</strong> to load an example.
+                  Then hit <strong style={{ color: 'var(--text)' }}>Check Vendors</strong> — results appear here as each one finishes.
                 </div>
               </div>
             )}
 
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-              gap: 16,
-            }}>
-              {sorted.map(v => (
-                <VendorCard key={v.vendor} v={v} animIn={animedIn.has(v.vendor)} />
-              ))}
-            </div>
-          </>
-        )}
-      </main>
+            {/* Loading */}
+            {phase === 'running' && sorted.length === 0 && (
+              <div style={{ textAlign: 'center', marginTop: 60, color: 'var(--muted)' }}>
+                <div style={{
+                  width: 36, height: 36, border: '3px solid var(--border)',
+                  borderTop: '3px solid var(--accent)', borderRadius: '50%',
+                  margin: '0 auto 16px', animation: 'spin 0.9s linear infinite',
+                }} />
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>Reading vendor websites...</div>
+                <div style={{ fontSize: 12, marginTop: 6 }}>Results appear here as each company finishes</div>
+              </div>
+            )}
 
-      <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
-      `}</style>
+            {/* Summary banner */}
+            {phase === 'done' && marketResult && (
+              <div style={{
+                marginBottom: 20, padding: '14px 20px', background: 'var(--surface)',
+                border: '1px solid var(--border)', borderRadius: 10,
+                display: 'flex', alignItems: 'center', gap: 32, flexWrap: 'wrap',
+                boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
+              }}>
+                <div>
+                  <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 2, textTransform: 'uppercase', fontWeight: 600 }}>Category</div>
+                  <div style={{ fontWeight: 700, fontSize: 15 }}>{marketResult.category}</div>
+                </div>
+                <div title="How many claims were made for every one that was actually verified — higher means more unverified marketing">
+                  <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 2, textTransform: 'uppercase', fontWeight: 600 }}>Inflation score</div>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--yellow)' }}>
+                    {marketResult.claim_inflation_index.toFixed(2)}x
+                  </div>
+                  <div style={{ fontSize: 10, color: '#9ca3af' }}>claims made per verified claim</div>
+                </div>
+                {!!marketResult.telemetry_summary?.['claim_inflation_note'] && (
+                  <div>
+                    <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 2, textTransform: 'uppercase', fontWeight: 600 }}>Summary</div>
+                    <div style={{ fontSize: 12, color: '#374151' }}>
+                      {String(marketResult.telemetry_summary['claim_inflation_note'])}
+                    </div>
+                  </div>
+                )}
+                <div style={{ marginLeft: 'auto', color: 'var(--green)', fontWeight: 700, fontSize: 13 }}>
+                  Check complete
+                </div>
+              </div>
+            )}
+
+            {/* Vendor cards */}
+            {sorted.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
+                {sorted.map(v => (
+                  <VendorCard key={v.vendor} v={v} animIn={animedIn.has(v.vendor)} />
+                ))}
+              </div>
+            )}
+          </main>
+        </div>
+      </div>
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   )
 }
