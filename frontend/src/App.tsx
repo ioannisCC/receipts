@@ -482,12 +482,12 @@ export default function App() {
           pointerEvents: 'none',
         }}>
           <div className="reveal-fade d-0" style={{
-            display: 'flex', alignItems: 'center', gap: 10,
+            display: 'flex', alignItems: 'center', gap: 11,
             color: 'var(--text)',
           }}>
-            <ReceiptsLogo size={20} className="headline-fade" />
+            <ReceiptsLogo size={26} className="headline-fade" />
             <span className="headline-fade" style={{
-              fontFamily: 'var(--font-sans)', fontSize: 20, fontWeight: 700,
+              fontFamily: 'var(--font-sans)', fontSize: 22, fontWeight: 700,
               letterSpacing: '-0.035em', lineHeight: 1,
             }}>Receipts</span>
           </div>
@@ -515,32 +515,35 @@ export default function App() {
           <div style={{ maxWidth: 660, width: '100%', textAlign: 'center' }}>
 
             {/* Receipts brand — big, centred */}
-            <div className="reveal-up d-0" style={{ marginBottom: 14, color: 'oklch(0.18 0.02 270 / 0.85)' }}>
-              <ReceiptsLogo size={44} />
+            <div className="reveal-up d-0" style={{ marginBottom: 18, color: 'oklch(0.18 0.02 270 / 0.85)' }}>
+              <ReceiptsLogo size={84} />
             </div>
             <h1 className="reveal-up d-1 headline-fade" style={{
               fontFamily: 'var(--font-sans)',
-              fontSize: 'clamp(56px, 8vw, 112px)',
+              fontSize: 'clamp(64px, 9vw, 128px)',
               fontWeight: 700, letterSpacing: '-0.055em', lineHeight: 1,
-              margin: 0, marginBottom: 16,
+              margin: 0, marginBottom: 18,
             }}>
               Receipts
             </h1>
 
+            {/* Tagline — fixed part on its own line so it stays anchored
+                regardless of rotating phrase length. */}
             <div className="reveal-up d-2" style={{
               color: 'var(--text-2)',
-              fontSize: 'clamp(17px, 2vw, 22px)',
+              fontSize: 'clamp(18px, 2.1vw, 24px)',
               fontFamily: 'var(--font-sans)', fontWeight: 400,
               lineHeight: 1.4, letterSpacing: '-0.01em',
-              marginBottom: 36, maxWidth: 560,
-              marginLeft: 'auto', marginRight: 'auto',
+              marginBottom: 40,
             }}>
-              Burden of proof,{' '}
-              <RotatingText phrases={[
-                'at market scale.',
-                'across every vendor.',
-                'with public receipts.',
-              ]} />
+              <div>Burden of proof,</div>
+              <div>
+                <RotatingText phrases={[
+                  'at market scale.',
+                  'across every vendor.',
+                  'with public receipts.',
+                ]} />
+              </div>
             </div>
 
             <div className="reveal-up d-3" style={{ marginBottom: 18 }}>
