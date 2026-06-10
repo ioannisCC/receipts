@@ -1,23 +1,39 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --bg: #f4f6f9;
-  --surface: #ffffff;
-  --surface2: #f0f2f5;
-  --border: #dde2ea;
-  --accent: #2563eb;
-  --accent2: #7c3aed;
-  --green: #16a34a;
-  --yellow: #d97706;
-  --red: #dc2626;
-  --text: #111827;
-  --muted: #6b7280;
+  /* Liquid-glass dark palette */
+  --bg: #08080f;
+  --bg-grad:
+    radial-gradient(1200px 800px at 75% -10%, rgba(99, 102, 241, 0.18) 0%, transparent 60%),
+    radial-gradient(900px 700px at 5% 110%, rgba(34, 211, 238, 0.12) 0%, transparent 55%),
+    #08080f;
+
+  /* Translucent surfaces — drawn over the body gradient with backdrop-filter */
+  --surface: rgba(18, 18, 30, 0.55);
+  --surface2: rgba(255, 255, 255, 0.04);
+  --surface3: rgba(255, 255, 255, 0.07);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.16);
+
+  --accent: #6366f1;       /* indigo-500 */
+  --accent2: #22d3ee;      /* cyan-400 */
+  --accent-grad: linear-gradient(135deg, #6366f1 0%, #22d3ee 100%);
+
+  /* Verdict palette — desaturated tetrachromatic, AA-legible on dark glass */
+  --green: #34d399;        /* emerald-400 */
+  --yellow: #fbbf24;       /* amber-400 */
+  --red: #f87171;          /* red-400 */
+
+  --text: #e6e8f0;
+  --muted: #9ca3b4;
+
   --mono: 'JetBrains Mono', monospace;
 }
 
 html, body, #root {
   height: 100%;
-  background: var(--bg);
+  background: var(--bg-grad);
+  background-attachment: fixed;
   color: var(--text);
   font-family: 'Inter', sans-serif;
   font-size: 14px;
@@ -25,6 +41,17 @@ html, body, #root {
   -webkit-font-smoothing: antialiased;
 }
 
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: var(--bg); }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+/* Liquid-glass utility — applied via inline style for now, kept as a class for
+   future cleanup. Don't remove without auditing inline backdrop-filter usage. */
+.glass {
+  background: var(--surface);
+  backdrop-filter: blur(14px) saturate(150%);
+  -webkit-backdrop-filter: blur(14px) saturate(150%);
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.28);
+}
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.10); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.22); }

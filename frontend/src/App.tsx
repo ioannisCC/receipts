@@ -63,22 +63,22 @@ Freshdesk AI, https://www.freshworks.com/freshdesk`
 
 const VERDICT_META = {
   SUPPORTED: {
-    label: 'Verified',
+    label: 'Publicly substantiated',
     color: 'var(--green)',
-    bg: '#dcfce7',
-    description: 'An independent third party (review site, news article, case study) confirmed this claim with real data',
+    bg: 'rgba(52, 211, 153, 0.12)',
+    description: 'Independent public sources (case studies, third-party reviews, published methodology) corroborate this claim. We report public substantiation, not truth — absence of evidence here is not proof a claim is false.',
   },
   SELF_REPORTED_ONLY: {
-    label: 'Unverified',
+    label: 'Self-reported only',
     color: 'var(--yellow)',
-    bg: '#fef9c3',
-    description: 'The vendor only said this about themselves — no outside source has confirmed it',
+    bg: 'rgba(251, 191, 36, 0.12)',
+    description: "The claim appears only on the vendor's own surfaces (site, blog, press releases). No independent public source echoes it — a signal, not a verdict on truth.",
   },
   NO_PUBLIC_RECEIPT_FOUND: {
-    label: 'No evidence',
+    label: 'No public receipt',
     color: 'var(--red)',
-    bg: '#fee2e2',
-    description: 'We searched the web and found nothing backing this claim',
+    bg: 'rgba(248, 113, 113, 0.12)',
+    description: 'We searched the public web and could not find a receipt for this claim. That does not mean the claim is false — we report public substantiation, not truth.',
   },
 }
 
@@ -114,7 +114,7 @@ function vendorStatusLabel(v: VendorResult) {
 }
 
 function vendorStatusTitle(v: VendorResult) {
-  if (v.credibility_score !== null) return 'Score out of 100 — how many of their claims were independently verified'
+  if (v.credibility_score !== null) return 'Score out of 100 — how many claims have independent public receipts. We measure public substantiation, not truth.'
   if (v.status === 'unreachable') return 'The page could not be loaded or scraped'
   if (v.status === 'no_claims_extracted') return 'The page loaded, but no specific marketing claims were found'
   if (v.status === 'error') return 'This vendor finished with an error'
@@ -142,7 +142,7 @@ function StatBox({ label, value, tip, mono }: { label: string; value: string; ti
         {value}
       </div>
       <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2, fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2, padding: '0 4px', lineHeight: 1.4 }}>{tip}</div>
+      <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2, padding: '0 4px', lineHeight: 1.4 }}>{tip}</div>
     </div>
   )
 }
@@ -161,12 +161,12 @@ function VendorCard({ v, animIn }: { v: VendorResult; animIn: boolean }) {
   const judgeMap = Object.fromEntries(v.judgments.map(j => [j.claim_id, j]))
 
   return (
-    <div style={{
+    <div className="glass" style={{
       background: 'var(--surface)',
       border: `1px solid ${pct !== null ? scoreColor(score) + '60' : 'var(--border)'}`,
-      borderRadius: 12,
+      borderRadius: 14,
       padding: '16px 18px',
-      boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+      boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
       transition: 'opacity 0.4s ease, transform 0.4s ease',
       opacity: animIn ? 1 : 0,
       transform: animIn ? 'translateY(0)' : 'translateY(20px)',
@@ -250,7 +250,7 @@ function VendorCard({ v, animIn }: { v: VendorResult; animIn: boolean }) {
       {/* Verdict badges */}
       {v.judgments.length > 0 && (
         <div style={{ marginBottom: 10 }}>
-          <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 6 }}>
+          <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 6 }}>
             Hover each badge to see what it means
           </div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -282,7 +282,7 @@ function VendorCard({ v, animIn }: { v: VendorResult; animIn: boolean }) {
           </button>
           {claimsOpen && (
             <div style={{ marginTop: 10 }}>
-              <div style={{ fontSize: 10, color: '#9ca3af', marginBottom: 8 }}>
+              <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 8 }}>
                 Each claim was pulled from their site, searched online, and then judged
               </div>
               {v.claims.map((c) => {
@@ -301,12 +301,12 @@ function VendorCard({ v, animIn }: { v: VendorResult; animIn: boolean }) {
                       {j.escalated && (
                         <span
                           title="The first AI was unsure — a more powerful AI re-checked this claim"
-                          style={{ fontSize: 10, color: '#7c3aed', cursor: 'help' }}>
+                          style={{ fontSize: 10, color: 'var(--accent2)', cursor: 'help' }}>
                           double-checked
                         </span>
                       )}
                     </div>
-                    <div style={{ fontSize: 10, color: '#6b7280', marginTop: 4 }}>{j.rationale}</div>
+                    <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>{j.rationale}</div>
                   </div>
                 )
               })}
@@ -327,7 +327,7 @@ function VendorCard({ v, animIn }: { v: VendorResult; animIn: boolean }) {
       {adviceOpen && v.advice && (
         <div style={{
           marginTop: 8, padding: '10px 14px', background: 'var(--surface2)',
-          borderRadius: 8, fontSize: 12, color: '#374151', lineHeight: 1.7, whiteSpace: 'pre-wrap',
+          borderRadius: 8, fontSize: 12, color: 'var(--text)', lineHeight: 1.7, whiteSpace: 'pre-wrap',
         }}>
           {v.advice}
         </div>
@@ -451,13 +451,19 @@ export default function App() {
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
 
       {/* Header */}
-      <header style={{
+      <header className="glass" style={{
         padding: '14px 32px', borderBottom: '1px solid var(--border)', background: 'var(--surface)',
         display: 'flex', alignItems: 'center', gap: 14,
-        boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+        boxShadow: '0 4px 24px rgba(0,0,0,0.30)',
       }}>
-        <span style={{ fontSize: 22, fontWeight: 900, letterSpacing: '-0.5px', color: 'var(--accent)' }}>RECEIPTS</span>
-        <span style={{ background: 'var(--accent)', color: '#fff', fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 4 }}>BETA</span>
+        <span style={{
+          fontSize: 22, fontWeight: 900, letterSpacing: '-0.5px',
+          background: 'var(--accent-grad)',
+          WebkitBackgroundClip: 'text',
+          backgroundClip: 'text',
+          color: 'transparent',
+        }}>RECEIPTS</span>
+        <span style={{ background: 'var(--accent-grad)', color: '#fff', fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 4 }}>BETA</span>
         <span style={{ color: 'var(--muted)', fontSize: 12 }}>
           Checks whether AI vendors can actually back up the claims on their website
         </span>
@@ -467,10 +473,11 @@ export default function App() {
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
 
         {/* Left sidebar: controls */}
-        <aside style={{
+        <aside className="glass" style={{
           width: sidebarWidth, flexShrink: 0,
           background: 'var(--surface)', padding: '24px 20px',
           display: 'flex', flexDirection: 'column', gap: 22, overflowY: 'auto',
+          borderRight: '1px solid var(--border)',
         }}>
 
           {/* Vendor input */}
@@ -562,12 +569,12 @@ export default function App() {
                 }}>
                   {m.label}
                 </div>
-                <div style={{ fontSize: 10, color: '#6b7280', marginTop: 3, lineHeight: 1.5 }}>{m.description}</div>
+                <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3, lineHeight: 1.5 }}>{m.description}</div>
               </div>
             ))}
             <div style={{ marginTop: 6 }}>
-              <div style={{ fontSize: 12, color: '#7c3aed', fontWeight: 600 }}>double-checked</div>
-              <div style={{ fontSize: 10, color: '#6b7280', marginTop: 3, lineHeight: 1.5 }}>
+              <div style={{ fontSize: 12, color: 'var(--accent2)', fontWeight: 600 }}>double-checked</div>
+              <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3, lineHeight: 1.5 }}>
                 The first AI was not sure, so a stronger AI re-checked the claim
               </div>
             </div>
@@ -601,7 +608,7 @@ export default function App() {
               { label: 'Total Cost', value: fmtCost(stats.totalCost), tip: 'How much this check cost in AI fees', mono: true },
               { label: 'Time', value: fmtMs(stats.elapsedMs), tip: 'How long the check has been running' },
               { label: 'AI Calls', value: String(stats.calls), tip: 'Total number of AI questions asked' },
-              { label: 'Double-checked', value: stats.totalJudgments > 0 ? `${stats.escalations}/${stats.totalJudgments}` : '—', tip: 'Claims that a second AI re-verified' },
+              { label: 'Double-checked', value: stats.totalJudgments > 0 ? `${stats.escalations}/${stats.totalJudgments}` : '—', tip: 'Claims that a second AI re-checked' },
               { label: 'Progress', value: activeVendors.length > 0 ? `${vendors.length} / ${activeVendors.length}` : `${vendors.length} done`, tip: 'Companies finished vs total' },
             ].map(({ label, value, tip, mono }) => (
               <div key={label} style={{ background: 'var(--surface)' }}>
@@ -651,17 +658,17 @@ export default function App() {
                   <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 2, textTransform: 'uppercase', fontWeight: 600 }}>Category</div>
                   <div style={{ fontWeight: 700, fontSize: 15 }}>{marketResult.category}</div>
                 </div>
-                <div title="How many claims were made for every one that was actually verified — higher means more unverified marketing">
+                <div title="How many claims were made for every one with an independent public receipt. Higher means more self-reported marketing copy.">
                   <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 2, textTransform: 'uppercase', fontWeight: 600 }}>Inflation score</div>
                   <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--yellow)' }}>
                     {marketResult.claim_inflation_index.toFixed(2)}x
                   </div>
-                  <div style={{ fontSize: 10, color: '#9ca3af' }}>claims made per verified claim</div>
+                  <div style={{ fontSize: 10, color: 'var(--muted)' }}>claims made per publicly substantiated claim</div>
                 </div>
                 {!!marketResult.telemetry_summary?.['claim_inflation_note'] && (
                   <div>
                     <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 2, textTransform: 'uppercase', fontWeight: 600 }}>Summary</div>
-                    <div style={{ fontSize: 12, color: '#374151' }}>
+                    <div style={{ fontSize: 12, color: 'var(--text)' }}>
                       {String(marketResult.telemetry_summary['claim_inflation_note'])}
                     </div>
                   </div>
