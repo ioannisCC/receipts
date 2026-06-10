@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     JUDGE_CONFIDENCE_THRESHOLD: float = 0.7
     SCRAPE_TIMEOUT_S: float = 10.0
     LLM_TIMEOUT_S: float = 45.0
+    # Keep broken/cold cheap endpoints from making the UI feel stuck.
     CHEAP_LLM_TIMEOUT_S: float = 8.0
 
     # Akamai fallback: route all cheap-tier calls to Anthropic when Akamai is unavailable.
