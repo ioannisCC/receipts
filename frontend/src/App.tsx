@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, MouseEvent as RMouseEvent } from 'react'
+import { ReceiptsLogo } from './components/ReceiptsLogo'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -342,7 +343,10 @@ function VendorCard({ v, animIn }: { v: VendorResult; animIn: boolean }) {
 
 type Phase = 'idle' | 'running' | 'done'
 
+type View = 'landing' | 'demo'
+
 export default function App() {
+  const [view, setView] = useState<View>('landing')
   const [customText, setCustomText] = useState('')
   const [customError, setCustomError] = useState('')
   const [phase, setPhase] = useState<Phase>('idle')
@@ -456,60 +460,132 @@ export default function App() {
     r.readAsText(f)
   }
 
+  /* ═══════════ LANDING VIEW (aperture-style) ═══════════ */
+  if (view === 'landing') {
+    return (
+      <>
+        <div className="aurora-bg" />
+        <div style={{
+          minHeight: '100vh',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center',
+          padding: '24px',
+          textAlign: 'center',
+          gap: 28,
+        }}>
+          <div className="reveal-up d-0" style={{ color: 'oklch(0.18 0.02 270 / 0.85)' }}>
+            <ReceiptsLogo size={56} />
+          </div>
+
+          <h1 className="reveal-up d-1 headline-fade" style={{
+            fontFamily: 'var(--font-serif)',
+            fontSize: 'clamp(56px, 9vw, 128px)',
+            fontWeight: 600,
+            letterSpacing: '-0.04em',
+            lineHeight: 1,
+            margin: 0,
+          }}>
+            Receipts
+          </h1>
+
+          <p className="reveal-up d-2" style={{
+            maxWidth: 540,
+            fontFamily: 'var(--font-serif)',
+            fontSize: 'clamp(15px, 1.6vw, 19px)',
+            fontStyle: 'italic',
+            fontWeight: 400,
+            color: 'var(--text-2)',
+            lineHeight: 1.5,
+            letterSpacing: '-0.005em',
+          }}>
+            Burden of proof for AI vendor claims.<br/>
+            Read every page, hunt the public web, score what can be backed up.
+          </p>
+
+          <button
+            onClick={() => setView('demo')}
+            className="reveal-up d-3 pill pill-primary"
+            style={{
+              height: 56, fontSize: 15, padding: '0 44px', minWidth: 200,
+              marginTop: 8,
+            }}>
+            Go to demo →
+          </button>
+        </div>
+      </>
+    )
+  }
+
+  /* ═══════════ DEMO VIEW ═══════════ */
   return (
     <>
       {/* Ambient gradient backdrop */}
       <div className="backdrop" />
 
-      {/* Tiny floating header — always present, no chrome */}
-      <div style={{
-        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 20,
-        padding: '24px 36px',
-        display: 'flex', alignItems: 'baseline', gap: 14,
-        pointerEvents: 'none',
-      }}>
-        <span className="headline-fade reveal-up d-0" style={{
-          fontFamily: 'var(--font-serif)', fontSize: 22, fontWeight: 600,
-          letterSpacing: '-0.025em', lineHeight: 1,
-        }}>Receipts</span>
-        {phase !== 'idle' && (
-          <span key={phase} className="reveal-fade d-1" style={{
+      {/* Tiny floating header — only shown when audit is running/done.
+          In demo idle the brand sits big in the centre of the hero. */}
+      {phase !== 'idle' && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, zIndex: 20,
+          padding: '24px 36px',
+          display: 'flex', alignItems: 'center', gap: 12,
+          pointerEvents: 'none',
+        }}>
+          <button
+            onClick={() => setView('landing')}
+            className="reveal-fade d-0"
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              background: 'none', border: 'none', padding: 0,
+              cursor: 'pointer', pointerEvents: 'auto',
+              color: 'var(--text)',
+            }}
+            title="Back to landing">
+            <ReceiptsLogo size={20} className="headline-fade" />
+            <span className="headline-fade" style={{
+              fontFamily: 'var(--font-serif)', fontSize: 20, fontWeight: 600,
+              letterSpacing: '-0.025em', lineHeight: 1,
+            }}>Receipts</span>
+          </button>
+          <span className="reveal-fade d-1" style={{
             color: 'var(--muted)', fontSize: 12,
             fontFamily: 'var(--font-serif)', fontStyle: 'italic',
           }}>
             Burden of proof for AI vendor claims.
           </span>
-        )}
-      </div>
+        </div>
+      )}
 
       {phase === 'idle' ? (
-        /* ───── IDLE HERO ───── */
+        /* ───── IDLE HERO (demo) ───── */
         <div style={{
           minHeight: '100vh',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          padding: '110px 24px 80px',
+          padding: '64px 24px 80px',
         }}>
           <div style={{ maxWidth: 660, width: '100%', textAlign: 'center' }}>
 
-            <div className="reveal-up d-1" style={{ marginBottom: 22 }}>
-              <span className="headline-fade" style={{
-                fontFamily: 'var(--font-serif)', fontSize: 'clamp(38px, 6.4vw, 68px)',
-                fontWeight: 600, letterSpacing: '-0.035em', lineHeight: 1.05,
-                display: 'inline-block',
-              }}>
-                Burden of proof,
-                <br/>
-                at market scale.
-              </span>
+            {/* Receipts brand — big, centred */}
+            <div className="reveal-up d-0" style={{ marginBottom: 14, color: 'oklch(0.18 0.02 270 / 0.85)' }}>
+              <ReceiptsLogo size={44} />
             </div>
+            <h1 className="reveal-up d-1 headline-fade" style={{
+              fontFamily: 'var(--font-serif)',
+              fontSize: 'clamp(56px, 8vw, 96px)',
+              fontWeight: 600, letterSpacing: '-0.035em', lineHeight: 1,
+              margin: 0, marginBottom: 12,
+            }}>
+              Receipts
+            </h1>
 
             <div className="reveal-up d-2" style={{
               color: 'var(--text-2)', fontSize: 15.5, lineHeight: 1.7,
-              fontFamily: 'var(--font-serif)', fontWeight: 400,
-              marginBottom: 36, maxWidth: 520, marginLeft: 'auto', marginRight: 'auto',
+              fontFamily: 'var(--font-serif)', fontStyle: 'italic',
+              marginBottom: 32, maxWidth: 520, marginLeft: 'auto', marginRight: 'auto',
             }}>
-              Paste a category's vendors below. Receipts reads each homepage, hunts
-              the public web for evidence, and scores what they can actually back up.
+              Burden of proof, at market scale. Paste a category's vendors below.
+              Receipts reads each homepage, hunts the public web for evidence,
+              and scores what they can actually back up.
             </div>
 
             <div className="reveal-up d-3" style={{ marginBottom: 18 }}>
