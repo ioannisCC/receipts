@@ -468,9 +468,10 @@ export default function App() {
 
   return (
     <>
-      {/* Aurora gradient backdrop — radial blooms over a diagonal warm→cool
-          base, with two slowly drifting linear-gradient layers on top. */}
-      <div className="aurora-bg" />
+      {/* Gradient backdrop is applied directly to html/body/#root in
+          index.css — no DOM element needed. Earlier we used a fixed
+          z-index:-1 div which got painted BEHIND the body background
+          and was invisible. Painting it on the canvas itself fixes that. */}
 
       {/* Tiny floating header — only shown when audit is running/done.
           In demo idle the brand sits big in the centre of the hero. */}
