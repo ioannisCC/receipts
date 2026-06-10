@@ -124,6 +124,15 @@ function vendorStatusTitle(v: VendorResult) {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
+function RotatingText({ phrases, intervalMs = 2800 }: { phrases: string[]; intervalMs?: number }) {
+  const [i, setI] = useState(0)
+  useEffect(() => {
+    const t = setInterval(() => setI(idx => (idx + 1) % phrases.length), intervalMs)
+    return () => clearInterval(t)
+  }, [phrases.length, intervalMs])
+  return <span key={i} className="rotate-fade">{phrases[i]}</span>
+}
+
 function Tip({ text }: { text: string }) {
   return (
     <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 4, lineHeight: 1.5 }}>
@@ -471,17 +480,17 @@ export default function App() {
           alignItems: 'center', justifyContent: 'center',
           padding: '24px',
           textAlign: 'center',
-          gap: 28,
+          gap: 30,
         }}>
           <div className="reveal-up d-0" style={{ color: 'oklch(0.18 0.02 270 / 0.85)' }}>
             <ReceiptsLogo size={56} />
           </div>
 
           <h1 className="reveal-up d-1 headline-fade" style={{
-            fontFamily: 'var(--font-serif)',
-            fontSize: 'clamp(56px, 9vw, 128px)',
-            fontWeight: 600,
-            letterSpacing: '-0.04em',
+            fontFamily: 'var(--font-sans)',
+            fontSize: 'clamp(64px, 10vw, 144px)',
+            fontWeight: 700,
+            letterSpacing: '-0.055em',
             lineHeight: 1,
             margin: 0,
           }}>
@@ -489,25 +498,28 @@ export default function App() {
           </h1>
 
           <p className="reveal-up d-2" style={{
-            maxWidth: 540,
-            fontFamily: 'var(--font-serif)',
-            fontSize: 'clamp(15px, 1.6vw, 19px)',
-            fontStyle: 'italic',
+            maxWidth: 720,
+            fontFamily: 'var(--font-sans)',
+            fontSize: 'clamp(20px, 2.4vw, 30px)',
             fontWeight: 400,
             color: 'var(--text-2)',
-            lineHeight: 1.5,
-            letterSpacing: '-0.005em',
+            lineHeight: 1.35,
+            letterSpacing: '-0.015em',
           }}>
-            Burden of proof for AI vendor claims.<br/>
-            Read every page, hunt the public web, score what can be backed up.
+            Burden of proof{' '}
+            <RotatingText phrases={[
+              'for AI vendor claims.',
+              'at market scale.',
+              'with public receipts.',
+            ]} />
           </p>
 
           <button
             onClick={() => setView('demo')}
             className="reveal-up d-3 pill pill-primary"
             style={{
-              height: 56, fontSize: 15, padding: '0 44px', minWidth: 200,
-              marginTop: 8,
+              height: 58, fontSize: 15, padding: '0 46px', minWidth: 220,
+              marginTop: 10,
             }}>
             Go to demo →
           </button>
@@ -543,15 +555,20 @@ export default function App() {
             title="Back to landing">
             <ReceiptsLogo size={20} className="headline-fade" />
             <span className="headline-fade" style={{
-              fontFamily: 'var(--font-serif)', fontSize: 20, fontWeight: 600,
-              letterSpacing: '-0.025em', lineHeight: 1,
+              fontFamily: 'var(--font-sans)', fontSize: 20, fontWeight: 700,
+              letterSpacing: '-0.035em', lineHeight: 1,
             }}>Receipts</span>
           </button>
           <span className="reveal-fade d-1" style={{
             color: 'var(--muted)', fontSize: 12,
-            fontFamily: 'var(--font-serif)', fontStyle: 'italic',
+            fontFamily: 'var(--font-sans)',
           }}>
-            Burden of proof for AI vendor claims.
+            Burden of proof{' '}
+            <RotatingText phrases={[
+              'for AI vendor claims.',
+              'at market scale.',
+              'with public receipts.',
+            ]} />
           </span>
         </div>
       )}
@@ -570,22 +587,28 @@ export default function App() {
               <ReceiptsLogo size={44} />
             </div>
             <h1 className="reveal-up d-1 headline-fade" style={{
-              fontFamily: 'var(--font-serif)',
-              fontSize: 'clamp(56px, 8vw, 96px)',
-              fontWeight: 600, letterSpacing: '-0.035em', lineHeight: 1,
-              margin: 0, marginBottom: 12,
+              fontFamily: 'var(--font-sans)',
+              fontSize: 'clamp(56px, 8vw, 112px)',
+              fontWeight: 700, letterSpacing: '-0.055em', lineHeight: 1,
+              margin: 0, marginBottom: 16,
             }}>
               Receipts
             </h1>
 
             <div className="reveal-up d-2" style={{
-              color: 'var(--text-2)', fontSize: 15.5, lineHeight: 1.7,
-              fontFamily: 'var(--font-serif)', fontStyle: 'italic',
-              marginBottom: 32, maxWidth: 520, marginLeft: 'auto', marginRight: 'auto',
+              color: 'var(--text-2)',
+              fontSize: 'clamp(17px, 2vw, 22px)',
+              fontFamily: 'var(--font-sans)', fontWeight: 400,
+              lineHeight: 1.4, letterSpacing: '-0.01em',
+              marginBottom: 36, maxWidth: 560,
+              marginLeft: 'auto', marginRight: 'auto',
             }}>
-              Burden of proof, at market scale. Paste a category's vendors below.
-              Receipts reads each homepage, hunts the public web for evidence,
-              and scores what they can actually back up.
+              Burden of proof,{' '}
+              <RotatingText phrases={[
+                'at market scale.',
+                'across every vendor.',
+                'with public receipts.',
+              ]} />
             </div>
 
             <div className="reveal-up d-3" style={{ marginBottom: 18 }}>

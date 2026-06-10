@@ -118,13 +118,23 @@ html, body, #root {
   border-radius: var(--radius-lg);
 }
 
-/* Serif gradient-fade headline — the aperture move. */
+/* Gradient-fade headline — the aperture move. Font-family is set by the
+   caller so titles can switch typeface without dropping the clip. */
 .headline-fade {
-  font-family: var(--font-serif);
   background: linear-gradient(180deg, var(--text) 0%, oklch(0.18 0.02 270 / 0.4) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+}
+
+/* Rotating-text fade-in — fires on every React key change. */
+@keyframes rotate-fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.rotate-fade {
+  display: inline-block;
+  animation: rotate-fade-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -133,15 +143,20 @@ html, body, #root {
 ::-webkit-scrollbar-thumb:hover { background: rgba(15, 23, 42, 0.20); }
 
 /* Aurora — bigger, more dramatic version of the backdrop for the landing
-   page only. Ported from the aperture frontend (repeating linear gradients
-   with heavy blur, slow drift). Single keyframe, GPU-friendly. */
+   page only. Underlying smooth gradient (radial highlights + diagonal
+   linear) for the obvious "this is a gradient" feel; aurora drift sits on
+   top for atmosphere. Ported from the aperture frontend pattern. */
 .aurora-bg {
   position: fixed;
   inset: 0;
   z-index: -1;
   pointer-events: none;
   overflow: hidden;
-  background: #fafaf7;
+  background:
+    radial-gradient(ellipse 120% 80% at 15% 0%, oklch(0.94 0.08 264 / 0.55) 0%, transparent 60%),
+    radial-gradient(ellipse 100% 70% at 90% 100%, oklch(0.94 0.07 320 / 0.45) 0%, transparent 55%),
+    radial-gradient(ellipse 80% 60% at 50% 50%, oklch(0.96 0.05 200 / 0.30) 0%, transparent 60%),
+    linear-gradient(135deg, oklch(0.99 0.005 80) 0%, oklch(0.97 0.02 280) 100%);
 }
 .aurora-bg::before,
 .aurora-bg::after {
