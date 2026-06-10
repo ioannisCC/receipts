@@ -51,6 +51,85 @@ def _claim_id(vendor: str | None, span: str, index: int) -> str:
     return hashlib.sha1(key.encode()).hexdigest()[:10]
 
 
+_NUMBER_RE = re.compile(
+    r"(\$?\d+(?:,\d{3})*(?:\.\d+)?\s?(?:%|x|X|times|k|K|m|M|b|B|million|billion)?|\d+\s?/\s?\d+)"
+)
+
+
+def _fallback_claim_type(text: str) -> str:
+    t = text.lower()
+    if any(w in t for w in ("cost", "save", "saved", "savings", "roi", "$")):
+        return "cost"
+    if any(w in t for w in ("fast", "faster", "speed", "time", "minutes", "hours")):
+        return "speed"
+    if any(w in t for w in ("accurate", "accuracy", "error")):
+        return "accuracy"
+    if any(w in t for w in ("uptime", "reliable", "sla")):
+        return "reliability"
+    if any(w in t for w in ("customers", "users", "companies", "teams")):
+        return "scale"
+    return "performance"
+
+
+def _fallback_metric(text: str) -> str:
+    t = text.lower()
+    for label, words in {
+        "cost_reduction": ("cost", "save", "savings", "roi"),
+        "response_time": ("response", "time", "faster", "speed"),
+        "resolution_rate": ("resolve", "resolution", "ticket"),
+        "customer_scale": ("customers", "users", "companies", "teams"),
+        "accuracy": ("accurate", "accuracy"),
+        "uptime": ("uptime", "availability"),
+    }.items():
+        if any(w in t for w in words):
+            return label
+    return "quantified_claim"
+
+
+def _fallback_extract(markdown: str, vendor: str | None) -> list[Claim]:
+    """Fast deterministic backup for demos when the cheap model is cold/hanging.
+
+    It is intentionally conservative: only sentences containing clear numbers,
+    percentages, money, ratios, or multipliers become claims.
+    """
+    text = re.sub(r"\s+", " ", markdown)
+    chunks = re.split(r"(?<=[.!?])\s+|(?<=\|)\s+", text)
+    claims: list[Claim] = []
+    seen: set[str] = set()
+
+    for chunk in chunks:
+        sentence = chunk.strip(" -|•\t\n")
+        if len(sentence) < 24 or len(sentence) > 240:
+            continue
+        if sentence.startswith(("http://", "https://")):
+            continue
+        match = _NUMBER_RE.search(sentence)
+        if not match:
+            continue
+        lowered = sentence.lower()
+        if any(skip in lowered for skip in ("copyright", "privacy policy", "terms of", "cookie")):
+            continue
+        key = sentence.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+
+        claims.append(
+            Claim(
+                claim_id=_claim_id(vendor, sentence[:80], len(claims)),
+                claim=sentence,
+                metric=_fallback_metric(sentence),
+                magnitude=match.group(1).strip(),
+                claim_type=_fallback_claim_type(sentence),
+                verbatim_span=sentence[:120],
+            )
+        )
+        if len(claims) >= 8:
+            break
+
+    return claims
+
+
 async def extract(
     markdown: str,
     *,
@@ -99,4 +178,4 @@ async def extract(
                     continue
             return claims
         except Exception:
-            return []
+            return _fallback_extract(markdown, vendor)

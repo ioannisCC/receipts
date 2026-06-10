@@ -63,6 +63,7 @@ def cheap_client() -> AsyncOpenAI:
         _cheap_client = AsyncOpenAI(
             base_url=settings.AKAMAI_INFERENCE_URL,
             api_key=settings.AKAMAI_TOKEN,
+            max_retries=0,
         )
     return _cheap_client
 
@@ -85,10 +86,15 @@ async def chat(
     """Unified messages-in / text+usage-out entrypoint. Both tiers go through here
     so the telemetry wrapper has ONE surface to instrument. Messages use the
     OpenAI shape: [{"role": "system"|"user"|"assistant", "content": "..."}]."""
-    timeout = timeout_s if timeout_s is not None else settings.LLM_TIMEOUT_S
-
     if tier == "cheap" and settings.CHEAP_FALLBACK_TO_PREMIUM:
         tier = "premium"
+
+    if timeout_s is not None:
+        timeout = timeout_s
+    elif tier == "cheap":
+        timeout = min(settings.LLM_TIMEOUT_S, settings.CHEAP_LLM_TIMEOUT_S)
+    else:
+        timeout = settings.LLM_TIMEOUT_S
 
     if tier == "cheap":
         model = settings.CHEAP_MODEL
