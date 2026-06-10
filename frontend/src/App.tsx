@@ -64,20 +64,20 @@ Freshdesk AI, https://www.freshworks.com/freshdesk`
 const VERDICT_META = {
   SUPPORTED: {
     label: 'Publicly substantiated',
-    color: 'var(--green)',
-    bg: 'rgba(52, 211, 153, 0.12)',
+    color: 'var(--verdict-good)',
+    bg: 'var(--verdict-good-soft)',
     description: 'Independent public sources (case studies, third-party reviews, published methodology) corroborate this claim. We report public substantiation, not truth — absence of evidence here is not proof a claim is false.',
   },
   SELF_REPORTED_ONLY: {
     label: 'Self-reported only',
-    color: 'var(--yellow)',
-    bg: 'rgba(251, 191, 36, 0.12)',
+    color: 'var(--verdict-warn)',
+    bg: 'var(--verdict-warn-soft)',
     description: "The claim appears only on the vendor's own surfaces (site, blog, press releases). No independent public source echoes it — a signal, not a verdict on truth.",
   },
   NO_PUBLIC_RECEIPT_FOUND: {
     label: 'No public receipt',
-    color: 'var(--red)',
-    bg: 'rgba(248, 113, 113, 0.12)',
+    color: 'var(--verdict-bad)',
+    bg: 'var(--verdict-bad-soft)',
     description: 'We searched the public web and could not find a receipt for this claim. That does not mean the claim is false — we report public substantiation, not truth.',
   },
 }
@@ -97,9 +97,9 @@ function parseVendorText(raw: string): [string, string][] {
 
 function scoreColor(score: number | null) {
   if (score === null) return 'var(--muted)'
-  if (score >= 0.7) return 'var(--green)'
-  if (score >= 0.4) return 'var(--yellow)'
-  return 'var(--red)'
+  if (score >= 0.7) return 'var(--verdict-good)'
+  if (score >= 0.4) return 'var(--verdict-warn)'
+  return 'var(--verdict-bad)'
 }
 
 function fmtCost(n: number) { return `$${n.toFixed(4)}` }
@@ -133,16 +133,20 @@ function Tip({ text }: { text: string }) {
 
 function StatBox({ label, value, tip, mono }: { label: string; value: string; tip: string; mono?: boolean }) {
   return (
-    <div style={{ textAlign: 'center', padding: '14px 8px' }}>
+    <div style={{ textAlign: 'left', padding: '16px 22px' }} title={tip}>
       <div style={{
-        fontSize: mono ? 19 : 18, fontWeight: 700,
-        fontFamily: mono ? 'var(--mono)' : undefined,
-        color: 'var(--text)',
+        fontSize: 10, color: 'var(--muted)', marginBottom: 6,
+        textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.12em',
+      }}>
+        {label}
+      </div>
+      <div style={{
+        fontSize: 22, fontWeight: 600,
+        fontFamily: mono ? 'var(--font-mono)' : 'var(--font-serif)',
+        color: 'var(--text)', letterSpacing: '-0.02em', lineHeight: 1,
       }}>
         {value}
       </div>
-      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2, fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2, padding: '0 4px', lineHeight: 1.4 }}>{tip}</div>
     </div>
   )
 }
@@ -162,39 +166,38 @@ function VendorCard({ v, animIn }: { v: VendorResult; animIn: boolean }) {
 
   return (
     <div className="glass" style={{
-      background: 'var(--surface)',
-      border: `1px solid ${pct !== null ? scoreColor(score) + '60' : 'var(--border)'}`,
-      borderRadius: 14,
-      padding: '16px 18px',
-      boxShadow: '0 8px 24px rgba(0,0,0,0.35)',
+      borderRadius: 18,
+      padding: '20px 22px',
       transition: 'opacity 0.4s ease, transform 0.4s ease',
       opacity: animIn ? 1 : 0,
       transform: animIn ? 'translateY(0)' : 'translateY(20px)',
     }}>
       {/* Header row */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-        <div>
-          <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text)' }}>{v.vendor}</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, gap: 12 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontFamily: 'var(--font-serif)', fontWeight: 600, fontSize: 19, color: 'var(--text)', letterSpacing: '-0.01em', lineHeight: 1.25 }}>
+            {v.vendor}
+          </div>
           <a href={v.url} target="_blank" rel="noreferrer"
-            style={{ color: 'var(--muted)', fontSize: 11, marginTop: 2, display: 'block', textDecoration: 'none' }}>
-            {v.url}
+            style={{ color: 'var(--muted)', fontSize: 11, marginTop: 3, display: 'block', textDecoration: 'none', fontFamily: 'var(--font-mono)' }}>
+            {v.url.replace(/^https?:\/\//, '')}
           </a>
         </div>
         {pct !== null ? (
           <div
             title={vendorStatusTitle(v)}
             style={{
-              background: scoreColor(score), color: '#fff', fontWeight: 800,
-              fontSize: 18, borderRadius: 8, padding: '4px 12px', lineHeight: 1.2, cursor: 'help',
+              color: scoreColor(score), fontFamily: 'var(--font-serif)', fontWeight: 600,
+              fontSize: 28, lineHeight: 1, letterSpacing: '-0.02em', cursor: 'help',
             }}>
-            {vendorStatusLabel(v)}
+            {pct}
           </div>
         ) : (
           <div
             title={vendorStatusTitle(v)}
             style={{
               fontSize: 11,
-              color: v.status === 'ok' ? 'var(--muted)' : '#6b7280',
+              color: 'var(--muted)',
               fontStyle: 'italic',
               whiteSpace: 'nowrap',
             }}>
@@ -206,8 +209,8 @@ function VendorCard({ v, animIn }: { v: VendorResult; animIn: boolean }) {
       {/* Score bar */}
       {pct !== null && (
         <div title="Bar shows the credibility score"
-          style={{ height: 5, background: 'var(--surface2)', borderRadius: 3, marginBottom: 12, overflow: 'hidden', cursor: 'help' }}>
-          <div style={{ height: '100%', width: `${pct}%`, background: scoreColor(score), transition: 'width 0.8s ease' }} />
+          style={{ height: 2, background: 'rgba(15,23,42,0.06)', borderRadius: 2, marginBottom: 14, overflow: 'hidden', cursor: 'help' }}>
+          <div style={{ height: '100%', width: `${pct}%`, background: scoreColor(score), transition: 'width 0.8s ease', opacity: 0.7 }} />
         </div>
       )}
 
@@ -247,66 +250,64 @@ function VendorCard({ v, animIn }: { v: VendorResult; animIn: boolean }) {
         </div>
       )}
 
-      {/* Verdict badges */}
+      {/* Verdict badges — neutral pills */}
       {v.judgments.length > 0 && (
-        <div style={{ marginBottom: 10 }}>
-          <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 6 }}>
-            Hover each badge to see what it means
-          </div>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {Object.entries(counts).map(([verdict, count]) => {
-              const meta = VERDICT_META[verdict as keyof typeof VERDICT_META]
-              return (
-                <span key={verdict} title={meta.description} style={{
-                  background: meta.bg,
-                  border: `1px solid ${meta.color}`,
-                  color: meta.color,
-                  borderRadius: 6, padding: '2px 9px', fontSize: 11, fontWeight: 600, cursor: 'help',
-                }}>
-                  {count} {meta.label}
-                </span>
-              )
-            })}
-          </div>
+        <div style={{ marginBottom: 14, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {Object.entries(counts).map(([verdict, count]) => {
+            const meta = VERDICT_META[verdict as keyof typeof VERDICT_META]
+            return (
+              <span key={verdict} title={meta.description} style={{
+                background: meta.bg,
+                color: meta.color,
+                borderRadius: 9999,
+                padding: '3px 11px',
+                fontSize: 11,
+                fontWeight: 500,
+                letterSpacing: '-0.005em',
+                cursor: 'help',
+              }}>
+                <strong style={{ fontWeight: 600 }}>{count}</strong> {meta.label.toLowerCase()}
+              </span>
+            )
+          })}
         </div>
       )}
 
       {/* Expand: individual claims */}
       {v.claims.length > 0 && (
         <>
-          <button onClick={() => setClaimsOpen(x => !x)} style={{
-            background: 'none', border: '1px solid var(--border)', color: 'var(--muted)',
-            borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', marginRight: 6,
-          }}>
-            {claimsOpen ? 'Hide claims' : `Show ${v.claims.length} claims`}
+          <button onClick={() => setClaimsOpen(x => !x)} className="pill" style={{ height: 30, fontSize: 12, padding: '0 14px', marginRight: 6 }}>
+            {claimsOpen ? 'Hide claims' : `${v.claims.length} claim${v.claims.length === 1 ? '' : 's'}`}
           </button>
           {claimsOpen && (
-            <div style={{ marginTop: 10 }}>
-              <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 8 }}>
-                Each claim was pulled from their site, searched online, and then judged
-              </div>
+            <div style={{ marginTop: 12 }}>
               {v.claims.map((c) => {
                 const j = judgeMap[c.claim_id]
                 if (!j) return null
                 const meta = VERDICT_META[j.verdict]
                 return (
                   <div key={c.claim_id} style={{
-                    padding: '8px 12px', marginBottom: 6,
-                    background: meta.bg, borderRadius: 8, borderLeft: `3px solid ${meta.color}`,
+                    padding: '12px 14px', marginBottom: 8,
+                    background: meta.bg, borderRadius: 12,
+                    border: '1px solid rgba(15,23,42,0.05)',
                   }}>
-                    <div style={{ fontSize: 12, color: 'var(--text)', marginBottom: 4 }}>{c.claim}</div>
-                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: 11, color: meta.color, fontWeight: 600 }}>{meta.label}</span>
-                      <span style={{ fontSize: 10, color: 'var(--muted)' }}>{Math.round(j.confidence * 100)}% confident</span>
+                    <div style={{ fontSize: 13, color: 'var(--text)', marginBottom: 6, fontFamily: 'var(--font-serif)', fontWeight: 500, lineHeight: 1.4 }}>
+                      {c.claim}
+                    </div>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 4 }}>
+                      <span style={{ fontSize: 10, color: meta.color, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                        {meta.label}
+                      </span>
+                      <span style={{ fontSize: 10, color: 'var(--muted)' }}>{Math.round(j.confidence * 100)}% confidence</span>
                       {j.escalated && (
                         <span
-                          title="The first AI was unsure — a more powerful AI re-checked this claim"
-                          style={{ fontSize: 10, color: 'var(--accent2)', cursor: 'help' }}>
-                          double-checked
+                          title="Cheap-tier model was uncertain — frontier model re-checked this claim"
+                          style={{ fontSize: 10, color: 'var(--accent)', cursor: 'help', fontWeight: 500 }}>
+                          re-checked
                         </span>
                       )}
                     </div>
-                    <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 4 }}>{j.rationale}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-2)', lineHeight: 1.5 }}>{j.rationale}</div>
                   </div>
                 )
               })}
@@ -317,17 +318,18 @@ function VendorCard({ v, animIn }: { v: VendorResult; animIn: boolean }) {
 
       {/* Expand: buyer questions */}
       {v.advice && (
-        <button onClick={() => setAdviceOpen(x => !x)} style={{
-          background: 'none', border: '1px solid var(--border)', color: 'var(--muted)',
-          borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', marginTop: 6,
-        }}>
-          {adviceOpen ? 'Hide questions' : 'Questions to ask before buying'}
+        <button onClick={() => setAdviceOpen(x => !x)} className="pill" style={{ height: 30, fontSize: 12, padding: '0 14px', marginTop: 8 }}>
+          {adviceOpen ? 'Hide questions' : 'Questions for the vendor'}
         </button>
       )}
       {adviceOpen && v.advice && (
         <div style={{
-          marginTop: 8, padding: '10px 14px', background: 'var(--surface2)',
-          borderRadius: 8, fontSize: 12, color: 'var(--text)', lineHeight: 1.7, whiteSpace: 'pre-wrap',
+          marginTop: 10, padding: '14px 16px',
+          background: 'var(--surface-2)',
+          borderRadius: 12,
+          border: '1px solid var(--border)',
+          fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.65, whiteSpace: 'pre-wrap',
+          fontFamily: 'var(--font-serif)',
         }}>
           {v.advice}
         </div>
@@ -451,21 +453,21 @@ export default function App() {
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
 
       {/* Header */}
-      <header className="glass" style={{
-        padding: '14px 32px', borderBottom: '1px solid var(--border)', background: 'var(--surface)',
-        display: 'flex', alignItems: 'center', gap: 14,
-        boxShadow: '0 4px 24px rgba(0,0,0,0.30)',
+      <header style={{
+        padding: '20px 36px', borderBottom: '1px solid var(--border)',
+        background: 'rgba(255,255,255,0.6)',
+        backdropFilter: 'blur(20px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+        display: 'flex', alignItems: 'baseline', gap: 18,
       }}>
+        <span className="headline-fade" style={{
+          fontSize: 28, fontWeight: 600, letterSpacing: '-0.03em', lineHeight: 1,
+        }}>Receipts</span>
         <span style={{
-          fontSize: 22, fontWeight: 900, letterSpacing: '-0.5px',
-          background: 'var(--accent-grad)',
-          WebkitBackgroundClip: 'text',
-          backgroundClip: 'text',
-          color: 'transparent',
-        }}>RECEIPTS</span>
-        <span style={{ background: 'var(--accent-grad)', color: '#fff', fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 4 }}>BETA</span>
-        <span style={{ color: 'var(--muted)', fontSize: 12 }}>
-          Checks whether AI vendors can actually back up the claims on their website
+          color: 'var(--muted)', fontSize: 13, fontStyle: 'italic',
+          fontFamily: 'var(--font-serif)', fontWeight: 400, letterSpacing: '-0.005em',
+        }}>
+          Burden of proof for AI vendor claims.
         </span>
       </header>
 
@@ -473,61 +475,58 @@ export default function App() {
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
 
         {/* Left sidebar: controls */}
-        <aside className="glass" style={{
+        <aside style={{
           width: sidebarWidth, flexShrink: 0,
-          background: 'var(--surface)', padding: '24px 20px',
-          display: 'flex', flexDirection: 'column', gap: 22, overflowY: 'auto',
+          background: 'rgba(255,255,255,0.4)',
+          backdropFilter: 'blur(20px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+          padding: '28px 24px',
+          display: 'flex', flexDirection: 'column', gap: 26, overflowY: 'auto',
           borderRight: '1px solid var(--border)',
         }}>
 
           {/* Vendor input */}
           <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>
-              Which companies do you want to check?
+            <div style={{
+              fontFamily: 'var(--font-serif)', fontWeight: 600, fontSize: 18,
+              color: 'var(--text)', marginBottom: 2, letterSpacing: '-0.01em',
+            }}>
+              Which vendors?
             </div>
-            <Tip text="Type one company per line: Name, https://website.com" />
-            <div style={{ marginTop: 10 }}>
+            <Tip text="One per line: Name, https://website.com" />
+            <div style={{ marginTop: 12 }}>
               <button
                 onClick={() => { setCustomText(EXAMPLE_TEXT); setCustomError('') }}
                 disabled={phase === 'running'}
-                style={{
-                  background: 'var(--surface2)', color: 'var(--accent)',
-                  border: `1.5px solid var(--accent)`, borderRadius: 7,
-                  padding: '6px 14px', fontSize: 12, fontWeight: 600,
-                  cursor: phase === 'running' ? 'not-allowed' : 'pointer',
-                  marginBottom: 10,
-                }}>
-                Try it out — load an example
+                className="pill"
+                style={{ height: 32, fontSize: 12 }}>
+                Load example
               </button>
-              <Tip text="Loads 6 real AI support tool companies so you can see how it works" />
             </div>
             <textarea
               value={customText}
               onChange={e => { setCustomText(e.target.value); setCustomError('') }}
               disabled={phase === 'running'}
               placeholder={'Company Name, https://website.com\nAnother Co, https://another.com'}
-              rows={8}
+              rows={7}
               style={{
-                marginTop: 10, width: '100%', boxSizing: 'border-box',
-                background: 'var(--surface2)',
-                border: `1.5px solid ${customError ? 'var(--red)' : customText.trim() ? 'var(--accent)' : 'var(--border)'}`,
-                borderRadius: 8, color: 'var(--text)', fontSize: 13,
-                fontFamily: 'var(--mono)', padding: '10px 12px', resize: 'vertical', outline: 'none',
-                lineHeight: 1.6,
+                marginTop: 12, width: '100%', boxSizing: 'border-box',
+                background: 'rgba(255,255,255,0.6)',
+                border: `1px solid ${customError ? 'var(--verdict-bad)' : 'var(--border)'}`,
+                borderRadius: 12, color: 'var(--text)', fontSize: 13,
+                fontFamily: 'var(--font-mono)', padding: '12px 14px', resize: 'vertical', outline: 'none',
+                lineHeight: 1.65,
+                transition: 'border-color 0.15s',
               }}
             />
-            {customError && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 5 }}>{customError}</div>}
+            {customError && <div style={{ color: 'var(--verdict-bad)', fontSize: 12, marginTop: 6 }}>{customError}</div>}
             {customText.trim() && !customError && (
-              <div style={{ color: 'var(--green)', fontSize: 12, marginTop: 5, fontWeight: 600 }}>
-                {activeVendors.length} {activeVendors.length === 1 ? 'company' : 'companies'} ready
+              <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 6 }}>
+                {activeVendors.length} {activeVendors.length === 1 ? 'vendor' : 'vendors'} parsed
               </div>
             )}
-            <label style={{
-              display: 'inline-block', marginTop: 10, background: 'var(--surface2)',
-              border: '1px solid var(--border)', borderRadius: 6, padding: '6px 14px',
-              fontSize: 12, color: 'var(--muted)', cursor: 'pointer',
-            }}>
-              Upload a CSV or TXT file
+            <label className="pill" style={{ marginTop: 10, height: 30, fontSize: 11 }}>
+              Upload .csv / .txt
               <input type="file" accept=".csv,.txt" style={{ display: 'none' }}
                 onChange={e => {
                   const f = e.target.files?.[0]; if (!f) return
@@ -536,46 +535,50 @@ export default function App() {
                   r.readAsText(f)
                 }} />
             </label>
-            <Tip text="File format: one company per row — Name, URL" />
           </div>
 
           {/* Run button */}
           <div>
-            <button onClick={startAudit} disabled={phase === 'running'} style={{
-              width: '100%',
-              background: phase === 'running' ? 'var(--surface2)' : 'var(--accent)',
-              color: phase === 'running' ? 'var(--muted)' : '#fff',
-              border: 'none', borderRadius: 8, padding: '13px 0', fontSize: 15,
-              fontWeight: 700, cursor: phase === 'running' ? 'not-allowed' : 'pointer', transition: 'all 0.15s',
-            }}>
-              {phase === 'running' ? 'Checking...' : phase === 'done' ? 'Run Again' : 'Check Vendors'}
+            <button onClick={startAudit} disabled={phase === 'running'}
+              className="pill pill-primary"
+              style={{ width: '100%', height: 48, fontSize: 14, fontWeight: 500 }}>
+              {phase === 'running' ? 'Auditing…' : phase === 'done' ? 'Audit again' : 'Audit the market'}
             </button>
             {activeVendors.length > 0
-              ? <Tip text={`Visits ${activeVendors.length} website${activeVendors.length !== 1 ? 's' : ''}, finds marketing claims, searches the web for proof, and scores each claim. Usually takes 60-90 seconds.`} />
-              : <Tip text="Add at least one company above to get started." />
+              ? <Tip text={`Reads ${activeVendors.length} page${activeVendors.length !== 1 ? 's' : ''}, hunts public receipts, scores. ≈ 15–90s.`} />
+              : <Tip text="Add at least one vendor above to start." />
             }
           </div>
 
           {/* Legend */}
           <div>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--muted)', letterSpacing: '0.08em', marginBottom: 10, textTransform: 'uppercase' }}>
-              What the labels mean
+            <div style={{
+              fontFamily: 'var(--font-sans)', fontSize: 10, fontWeight: 600,
+              color: 'var(--muted)', letterSpacing: '0.12em',
+              marginBottom: 12, textTransform: 'uppercase',
+            }}>
+              Verdicts
             </div>
             {Object.entries(VERDICT_META).map(([, m]) => (
-              <div key={m.label} style={{ marginBottom: 10 }}>
-                <div style={{
+              <div key={m.label} style={{ marginBottom: 12 }}>
+                <span style={{
                   display: 'inline-block', background: m.bg, color: m.color,
-                  fontWeight: 600, fontSize: 12, padding: '1px 8px', borderRadius: 5, border: `1px solid ${m.color}`,
+                  fontWeight: 500, fontSize: 11, padding: '2px 10px', borderRadius: 9999,
+                  letterSpacing: '-0.005em',
                 }}>
                   {m.label}
-                </div>
-                <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3, lineHeight: 1.5 }}>{m.description}</div>
+                </span>
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5, lineHeight: 1.55 }}>{m.description}</div>
               </div>
             ))}
-            <div style={{ marginTop: 6 }}>
-              <div style={{ fontSize: 12, color: 'var(--accent2)', fontWeight: 600 }}>double-checked</div>
-              <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 3, lineHeight: 1.5 }}>
-                The first AI was not sure, so a stronger AI re-checked the claim
+            <div style={{ marginTop: 4 }}>
+              <span style={{
+                display: 'inline-block', fontSize: 11, color: 'var(--accent)', fontWeight: 500,
+                padding: '2px 10px', borderRadius: 9999,
+                background: 'var(--accent-soft)',
+              }}>re-checked</span>
+              <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5, lineHeight: 1.55 }}>
+                Cheap-tier was uncertain — frontier model re-judged this claim. The visible cost of the cascade routing.
               </div>
             </div>
           </div>
@@ -585,14 +588,14 @@ export default function App() {
         <div
           onMouseDown={startDrag}
           style={{
-            width: 6, flexShrink: 0,
+            width: 1, flexShrink: 0,
             background: 'var(--border)',
             cursor: 'col-resize',
-            transition: 'background 0.15s',
+            transition: 'background 0.15s, width 0.15s',
             position: 'relative',
           }}
-          onMouseEnter={e => (e.currentTarget.style.background = 'var(--accent)')}
-          onMouseLeave={e => (e.currentTarget.style.background = 'var(--border)')}
+          onMouseEnter={e => { e.currentTarget.style.background = 'var(--text-2)'; e.currentTarget.style.width = '2px' }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'var(--border)'; e.currentTarget.style.width = '1px' }}
           title="Drag to resize panel"
         />
 
@@ -602,86 +605,98 @@ export default function App() {
           {/* Stats bar */}
           <div style={{
             display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)',
-            gap: 1, background: 'var(--border)', borderBottom: '1px solid var(--border)', flexShrink: 0,
+            background: 'rgba(255,255,255,0.5)',
+            backdropFilter: 'blur(20px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+            borderBottom: '1px solid var(--border)',
+            flexShrink: 0,
           }}>
             {[
-              { label: 'Total Cost', value: fmtCost(stats.totalCost), tip: 'How much this check cost in AI fees', mono: true },
-              { label: 'Time', value: fmtMs(stats.elapsedMs), tip: 'How long the check has been running' },
-              { label: 'AI Calls', value: String(stats.calls), tip: 'Total number of AI questions asked' },
-              { label: 'Double-checked', value: stats.totalJudgments > 0 ? `${stats.escalations}/${stats.totalJudgments}` : '—', tip: 'Claims that a second AI re-checked' },
-              { label: 'Progress', value: activeVendors.length > 0 ? `${vendors.length} / ${activeVendors.length}` : `${vendors.length} done`, tip: 'Companies finished vs total' },
-            ].map(({ label, value, tip, mono }) => (
-              <div key={label} style={{ background: 'var(--surface)' }}>
+              { label: 'Total cost', value: fmtCost(stats.totalCost), tip: 'AI inference spend on this audit', mono: true },
+              { label: 'Elapsed', value: fmtMs(stats.elapsedMs), tip: 'Wall-clock time since the audit started' },
+              { label: 'Calls', value: String(stats.calls), tip: 'External calls measured by the telemetry bus' },
+              { label: 'Re-checked', value: stats.totalJudgments > 0 ? `${stats.escalations}/${stats.totalJudgments}` : '—', tip: 'Cheap-tier escalations to the frontier model — the cascade in action' },
+              { label: 'Progress', value: activeVendors.length > 0 ? `${vendors.length} / ${activeVendors.length}` : `${vendors.length} done`, tip: 'Vendors completed vs total' },
+            ].map(({ label, value, tip, mono }, i) => (
+              <div key={label} style={{
+                borderLeft: i === 0 ? 'none' : '1px solid var(--border)',
+              }}>
                 <StatBox label={label} value={value} tip={tip} mono={mono} />
               </div>
             ))}
           </div>
 
           {/* Results area */}
-          <main style={{ flex: 1, overflowY: 'auto', padding: '24px 28px' }}>
+          <main style={{ flex: 1, overflowY: 'auto', padding: '32px 36px' }}>
 
             {/* Idle */}
             {phase === 'idle' && (
-              <div style={{ textAlign: 'center', marginTop: 60, color: 'var(--muted)' }}>
-                <div style={{ fontSize: 52, fontWeight: 900, color: 'var(--accent)', opacity: 0.12, marginBottom: 16 }}>?</div>
-                <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text)', marginBottom: 10 }}>No results yet</div>
-                <div style={{ fontSize: 13, maxWidth: 380, margin: '0 auto', lineHeight: 1.7, color: 'var(--muted)' }}>
-                  Type in the companies you want to check on the left, or click{' '}
-                  <strong style={{ color: 'var(--text)' }}>Try it out</strong> to load an example.
-                  Then hit <strong style={{ color: 'var(--text)' }}>Check Vendors</strong> — results appear here as each one finishes.
+              <div style={{ textAlign: 'center', marginTop: 80, color: 'var(--muted)', maxWidth: 520, marginLeft: 'auto', marginRight: 'auto' }}>
+                <div className="headline-fade" style={{
+                  fontSize: 48, fontWeight: 600, letterSpacing: '-0.025em',
+                  lineHeight: 1.1, marginBottom: 18,
+                }}>
+                  Burden of proof,<br/>at market scale.
+                </div>
+                <div style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--text-2)', fontFamily: 'var(--font-serif)', fontWeight: 400 }}>
+                  Paste a category's vendors on the left.
+                  Receipts reads each homepage, decomposes the marketing copy into
+                  atomic claims, hunts the public web for evidence, and scores each
+                  vendor on what they can actually back up.
                 </div>
               </div>
             )}
 
             {/* Loading */}
             {phase === 'running' && sorted.length === 0 && (
-              <div style={{ textAlign: 'center', marginTop: 60, color: 'var(--muted)' }}>
+              <div style={{ textAlign: 'center', marginTop: 100, color: 'var(--muted)' }}>
                 <div style={{
-                  width: 36, height: 36, border: '3px solid var(--border)',
-                  borderTop: '3px solid var(--accent)', borderRadius: '50%',
-                  margin: '0 auto 16px', animation: 'spin 0.9s linear infinite',
+                  width: 32, height: 32, border: '2px solid var(--border)',
+                  borderTop: '2px solid var(--text)', borderRadius: '50%',
+                  margin: '0 auto 18px', animation: 'spin 0.9s linear infinite',
                 }} />
-                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>Reading vendor websites...</div>
-                <div style={{ fontSize: 12, marginTop: 6 }}>Results appear here as each company finishes</div>
+                <div style={{ fontSize: 14, color: 'var(--text)', fontFamily: 'var(--font-serif)', fontWeight: 500, letterSpacing: '-0.005em' }}>
+                  Reading vendor pages…
+                </div>
+                <div style={{ fontSize: 12, marginTop: 6 }}>Cards appear as each vendor finishes</div>
               </div>
             )}
 
             {/* Summary banner */}
             {phase === 'done' && marketResult && (
-              <div style={{
-                marginBottom: 20, padding: '14px 20px', background: 'var(--surface)',
-                border: '1px solid var(--border)', borderRadius: 10,
-                display: 'flex', alignItems: 'center', gap: 32, flexWrap: 'wrap',
-                boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
+              <div className="glass" style={{
+                marginBottom: 28, padding: '20px 24px',
+                borderRadius: 18,
+                display: 'flex', alignItems: 'baseline', gap: 40, flexWrap: 'wrap',
               }}>
                 <div>
-                  <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 2, textTransform: 'uppercase', fontWeight: 600 }}>Category</div>
-                  <div style={{ fontWeight: 700, fontSize: 15 }}>{marketResult.category}</div>
+                  <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 4, textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.12em' }}>Category</div>
+                  <div style={{ fontFamily: 'var(--font-serif)', fontWeight: 600, fontSize: 22, letterSpacing: '-0.015em' }}>{marketResult.category}</div>
                 </div>
                 <div title="How many claims were made for every one with an independent public receipt. Higher means more self-reported marketing copy.">
-                  <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 2, textTransform: 'uppercase', fontWeight: 600 }}>Inflation score</div>
-                  <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--yellow)' }}>
-                    {marketResult.claim_inflation_index.toFixed(2)}x
+                  <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 4, textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.12em' }}>Inflation</div>
+                  <div style={{ fontFamily: 'var(--font-serif)', fontWeight: 600, fontSize: 22, color: 'var(--verdict-warn)', letterSpacing: '-0.015em' }}>
+                    {marketResult.claim_inflation_index.toFixed(2)}×
                   </div>
-                  <div style={{ fontSize: 10, color: 'var(--muted)' }}>claims made per publicly substantiated claim</div>
+                  <div style={{ fontSize: 10, color: 'var(--muted)', marginTop: 2 }}>claims per substantiated claim</div>
                 </div>
                 {!!marketResult.telemetry_summary?.['claim_inflation_note'] && (
                   <div>
-                    <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 2, textTransform: 'uppercase', fontWeight: 600 }}>Summary</div>
-                    <div style={{ fontSize: 12, color: 'var(--text)' }}>
+                    <div style={{ fontSize: 10, color: 'var(--muted)', marginBottom: 4, textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.12em' }}>Note</div>
+                    <div style={{ fontSize: 13, color: 'var(--text-2)', fontFamily: 'var(--font-serif)', fontStyle: 'italic' }}>
                       {String(marketResult.telemetry_summary['claim_inflation_note'])}
                     </div>
                   </div>
                 )}
-                <div style={{ marginLeft: 'auto', color: 'var(--green)', fontWeight: 700, fontSize: 13 }}>
-                  Check complete
+                <div style={{ marginLeft: 'auto', color: 'var(--verdict-good)', fontSize: 12, fontWeight: 500, letterSpacing: '-0.005em' }}>
+                  Audit complete
                 </div>
               </div>
             )}
 
             {/* Vendor cards */}
             {sorted.length > 0 && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 18 }}>
                 {sorted.map(v => (
                   <VendorCard key={v.vendor} v={v} animIn={animedIn.has(v.vendor)} />
                 ))}
