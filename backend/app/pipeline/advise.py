@@ -1,28 +1,25 @@
-"""Stage D · ADVISE. Cheap-tier (or premium in naive mode). Given the vendor's
-judged claims, produce buyer-facing questions + one recommended next step.
+"""Stage D · ADVISE. Cheap-tier LLM. Given the vendor's judged claims, produce:
+    - 3-5 questions a buyer should ask
+    - 1 recommended next step
 
-Free-text output, assigned to VendorResult.advice."""
+Output is plain text bound to the VendorResult.advice field."""
 
 from __future__ import annotations
 
-from typing import Literal
-
 from app.clients import chat, cost_usd
-from app.config import settings
-from app.schemas import Judgment
+from app.schemas import Judgment, Verdict
 from app.telemetry import TelemetryBus, measure
 
+_SYSTEM = """You are a procurement advisor helping enterprise buyers evaluate AI vendor claims.
 
-_USER_TEMPLATE = """Vendor: {vendor}
+Given a list of claims and their verification verdicts, write:
+1. 3-5 sharp due-diligence questions the buyer should ask this vendor
+2. One recommended next step
 
-Audit findings (one line per claim):
-{findings}
-
-Write for a prospective buyer evaluating this vendor:
-1. 3-5 concrete questions they should ask the vendor's sales team, each on its own line, prefixed with "- ".
-2. One sentence starting with "Recommended next step:" suggesting the single most useful follow-up.
-
-Output plain text. Be specific to the claims above. No markdown headings."""
+Be direct and specific. Focus on claims that are unverified or self-reported.
+Write in plain text — no markdown headers, no bullet symbols, just numbered questions and a clear next step.
+Keep the total response under 200 words.
+"""
 
 
 async def advise(
@@ -30,18 +27,36 @@ async def advise(
     judgments: list[Judgment],
     *,
     bus: TelemetryBus,
-    tier: Literal["cheap", "premium"] = "cheap",
 ) -> str:
-    findings = "\n".join(
-        f"- [{j.verdict.value}] {j.rationale}" for j in judgments if j.rationale
-    ) or "- (no judged claims)"
-    user = _USER_TEMPLATE.format(vendor=vendor, findings=findings)
-    messages = [{"role": "user", "content": user}]
-    model_name = settings.CHEAP_MODEL if tier == "cheap" else settings.PREMIUM_MODEL
+    """Return buyer-facing advice text. Empty string is acceptable on failure."""
+    weak = [
+        j for j in judgments
+        if j.verdict in (Verdict.SELF_REPORTED_ONLY, Verdict.NO_PUBLIC_RECEIPT_FOUND)
+    ]
+    if not weak:
+        return "All claims checked out — standard contract and SLA review recommended."
 
-    async with measure(bus, stage="advise", model=model_name, vendor=vendor) as m:
-        result = await chat(tier, messages, max_tokens=600, temperature=0.2)
-        m.tokens_in = result.tokens_in
-        m.tokens_out = result.tokens_out
-        m.cost_usd = cost_usd(model_name, result.tokens_in, result.tokens_out)
-    return result.text.strip()
+    claim_lines = "\n".join(
+        f"- [{j.verdict.value}] {j.rationale}" for j in weak[:6]
+    )
+    user_content = (
+        f"Vendor: {vendor}\n\n"
+        f"Unverified or self-reported claims:\n{claim_lines}\n\n"
+        "Write the due-diligence questions and next step."
+    )
+
+    messages = [
+        {"role": "system", "content": _SYSTEM},
+        {"role": "user", "content": user_content},
+    ]
+
+    async with measure(bus, stage="advise", vendor=vendor) as m:
+        try:
+            result = await chat("cheap", messages, max_tokens=300, temperature=0.3)
+            m.tokens_in = result.tokens_in
+            m.tokens_out = result.tokens_out
+            m.model = result.model
+            m.cost_usd = cost_usd(result.model, result.tokens_in, result.tokens_out)
+            return result.text.strip()
+        except Exception:
+            return ""

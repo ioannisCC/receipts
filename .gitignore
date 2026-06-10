@@ -11,6 +11,11 @@ backend/app/caches/*
 backend/app/logs/*
 !backend/app/logs/.gitkeep
 
+node_modules/
+dist/
+.next/
+frontend/package-lock.json
+
 # Internal — never publish
 CLAUDE.md
 reference/

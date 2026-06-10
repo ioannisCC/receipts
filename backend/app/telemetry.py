@@ -32,6 +32,7 @@ class TelemetryBus:
         self.run_id = run_id or uuid.uuid4().hex[:12]
         self._subscribers: list[asyncio.Queue[TelemetryEvent]] = []
         self._log_path = LOGS_DIR / f"run_{self.run_id}.jsonl"
+        self.partial_result: Optional[object] = None  # set by orchestrator as vendors complete
 
     def subscribe(self) -> asyncio.Queue[TelemetryEvent]:
         q: asyncio.Queue[TelemetryEvent] = asyncio.Queue()

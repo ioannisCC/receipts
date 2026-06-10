@@ -1,24 +1,15 @@
-"""FastAPI surface.
-
-POST /audit          start a run, returns run_id
-GET  /audit/{id}/stream  SSE telemetry + lifecycle events
-GET  /categories     available category+vendor lists
-POST /vote/{category}   cast an audience vote
-GET  /vote/stream    SSE stream of live vote tallies
-GET  /healthz        liveness probe
-"""
+"""FastAPI surface. POST /audit starts a run and returns its run_id. The frontend
+opens GET /audit/{run_id}/stream as Server-Sent Events to receive every
+TelemetryEvent live — the telemetry IS the demo."""
 
 from __future__ import annotations
 
 import asyncio
-import json
-from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import orjson
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sse_starlette import EventSourceResponse
 
@@ -34,21 +25,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── in-memory state ──────────────────────────────────────────────────────────
-
+# run_id -> bus. In-memory is fine for the demo (single process, no restart).
 _RUNS: dict[str, TelemetryBus] = {}
+# run_id -> task running the orchestrator. Held so we don't GC the coroutine.
 _TASKS: dict[str, asyncio.Task] = {}
 
-_VOTES: dict[str, int] = {}
-_VOTE_SUBS: list[asyncio.Queue] = []
-
-
-# ── request/response models ──────────────────────────────────────────────────
 
 class AuditRequest(BaseModel):
     category: str
     vendor_urls: list[tuple[str, str]] = Field(
-        ..., description="List of (vendor_name, url) tuples to audit."
+        ...,
+        description="List of (vendor_name, url) tuples to audit.",
     )
     naive: bool = False
     n: Optional[int] = None
@@ -57,9 +44,8 @@ class AuditRequest(BaseModel):
 class AuditAccepted(BaseModel):
     run_id: str
     stream_url: str
+    results_url: str
 
-
-# ── audit endpoints ──────────────────────────────────────────────────────────
 
 @app.post("/audit", response_model=AuditAccepted)
 async def audit(req: AuditRequest) -> AuditAccepted:
@@ -82,6 +68,7 @@ async def audit(req: AuditRequest) -> AuditAccepted:
     return AuditAccepted(
         run_id=bus.run_id,
         stream_url=f"/audit/{bus.run_id}/stream",
+        results_url=f"/audit/{bus.run_id}/results",
     )
 
 
@@ -96,77 +83,44 @@ async def stream(run_id: str) -> EventSourceResponse:
     async def gen():
         try:
             while True:
-                event = await queue.get()
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
+                except asyncio.TimeoutError:
+                    # Send keep-alive comment
+                    yield {"event": "ping", "data": ""}
+                    continue
                 yield {
                     "event": "telemetry",
-                    "data": orjson.dumps(event.model_dump(mode="json")).decode(),
+                    "data": orjson.dumps(event.model_dump(mode="json")).decode("utf-8"),
                 }
+                if event.stage == "market_done":
+                    break
         finally:
             bus.unsubscribe(queue)
 
     return EventSourceResponse(gen())
 
 
-# ── categories endpoint ──────────────────────────────────────────────────────
+@app.get("/audit/{run_id}/results")
+async def results(run_id: str) -> Any:
+    """Returns partial or final MarketResult as the audit progresses."""
+    bus = _RUNS.get(run_id)
+    if bus is None:
+        raise HTTPException(status_code=404, detail="run not found")
 
-_VENDORS_DIR = Path(__file__).resolve().parents[1] / "data" / "vendors"
+    task = _TASKS.get(run_id)
+    partial = bus.partial_result
 
+    if task and task.done() and not task.exception():
+        final = task.result()
+        return orjson.loads(orjson.dumps(final.model_dump(mode="json")))
 
-@app.get("/categories")
-async def categories() -> list[dict]:
-    result = []
-    if _VENDORS_DIR.exists():
-        for f in sorted(_VENDORS_DIR.glob("*.json")):
-            try:
-                data = json.loads(f.read_text())
-                result.append(data)
-                _VOTES.setdefault(data["category"], 0)
-            except Exception:
-                pass
-    return result
+    if partial is not None:
+        return orjson.loads(orjson.dumps(partial.model_dump(mode="json")))  # type: ignore[attr-defined]
 
+    return {"category": "", "vendors": [], "claim_inflation_index": 0.0, "telemetry_summary": {}}
 
-# ── vote endpoints ────────────────────────────────────────────────────────────
-
-@app.post("/vote/{category}")
-async def vote(category: str) -> dict:
-    _VOTES[category] = _VOTES.get(category, 0) + 1
-    snapshot = dict(_VOTES)
-    for q in list(_VOTE_SUBS):
-        try:
-            q.put_nowait(snapshot)
-        except asyncio.QueueFull:
-            pass
-    return {"votes": snapshot}
-
-
-@app.get("/vote/stream")
-async def vote_stream() -> EventSourceResponse:
-    q: asyncio.Queue = asyncio.Queue(maxsize=50)
-    _VOTE_SUBS.append(q)
-    q.put_nowait(dict(_VOTES))  # seed current state immediately
-
-    async def gen():
-        try:
-            while True:
-                snapshot = await q.get()
-                yield {"event": "votes", "data": orjson.dumps(snapshot).decode()}
-        finally:
-            if q in _VOTE_SUBS:
-                _VOTE_SUBS.remove(q)
-
-    return EventSourceResponse(gen())
-
-
-# ── health ────────────────────────────────────────────────────────────────────
 
 @app.get("/healthz")
 async def healthz() -> dict[str, str]:
     return {"status": "ok"}
-
-
-# ── static frontend ───────────────────────────────────────────────────────────
-
-_FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
-if _FRONTEND_DIR.exists():
-    app.mount("/ui", StaticFiles(directory=str(_FRONTEND_DIR), html=True), name="ui")

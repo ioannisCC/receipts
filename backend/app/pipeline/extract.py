@@ -1,52 +1,54 @@
-"""Stage A · EXTRACT. Cheap-tier LLM decomposes vendor markdown into atomic
-outcome claims (FActScore / SAFE lineage). Strict JSON out -> pydantic-validated.
+"""Stage A · EXTRACT. Cheap-tier LLM (Akamai/Qwen3-8B-FP8) decomposes a vendor
+page's markdown into atomic outcome claims (FActScore / SAFE lineage).
 
-A parse failure after one retry yields []; the orchestrator grey-cards the
-vendor as 'no_claims_extracted'."""
+Output is a list[Claim] with Pydantic-enforced shape: each claim has a metric,
+magnitude, claim_type, and verbatim_span back into the source markdown."""
 
 from __future__ import annotations
 
-from typing import Literal
+import hashlib
+import json
+import re
 
-from app.clients import call_and_parse_json
+from app.clients import chat, cost_usd
 from app.schemas import Claim
-from app.telemetry import TelemetryBus
+from app.telemetry import TelemetryBus, measure
+
+_SYSTEM = """You are a precise claim extractor for an AI market auditor.
+
+Extract every specific, quantified outcome claim from the vendor marketing text below.
+Only include claims with a concrete number, percentage, ratio, or measurable outcome.
+Skip vague marketing phrases like "industry-leading", "best-in-class", or "enterprise-grade".
+
+Return ONLY a valid JSON array. No markdown, no explanation, just the JSON.
+Each element must have exactly these keys:
+- "claim": full claim statement (1 sentence)
+- "metric": what is being measured (e.g. "resolution_rate", "cost_reduction", "csat_score")
+- "magnitude": the specific number/ratio (e.g. "45%", "3x", "90%", "$2M")
+- "claim_type": one of "performance", "cost", "accuracy", "speed", "scale", "reliability"
+- "verbatim_span": the exact phrase from the source text (keep it short, ≤15 words)
+
+Example output:
+[
+  {"claim": "Resolves 45% of support tickets automatically", "metric": "resolution_rate", "magnitude": "45%", "claim_type": "performance", "verbatim_span": "resolves 45% of support tickets automatically"},
+  {"claim": "3x faster response time", "metric": "response_time", "magnitude": "3x", "claim_type": "speed", "verbatim_span": "3x faster response time"}
+]
+
+If no quantified claims are found, return [].
+"""
 
 
-EXTRACT_SYSTEM = """You are a market-claim analyst.
-
-Given a vendor's marketing page in markdown, extract every ATOMIC OUTCOME CLAIM \
--- a single quantifiable result the vendor attributes to using their product. \
-Skip generic capability statements ("AI-powered", "modern stack"); focus on \
-claims with a metric, magnitude, or named customer outcome.
-
-Return STRICT JSON: a top-level array. Each element:
-{
-  "claim": "short paraphrase, one sentence",
-  "metric": "the metric named (string), or null",
-  "magnitude": "the number / quantifier (e.g. '40%', '3x', '$2M'), or null",
-  "claim_type": "one of: performance, cost, time, quality, scale, accuracy, other",
-  "verbatim_span": "exact substring from the markdown that supports the claim"
-}
-
-If there are NO atomic outcome claims, return [].
-Output JSON only. No prose, no markdown fence."""
-
-# TODO(akamai-swap): prepend "/no_think\n" to the user prompt below for Qwen3-8B.
-# Qwen3-8B emits <think> traces that break json.loads; harmless on Haiku, mandatory on Qwen3.
-
-_USER_TEMPLATE = """Vendor: {vendor}
-
-Markdown:
-\"\"\"
-{md}
-\"\"\"
-
-Return the JSON array."""
+def _strip_json(text: str) -> str:
+    """Strip markdown code fences if the model wraps its JSON output."""
+    text = text.strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"```\s*$", "", text)
+    return text.strip()
 
 
-def _slug(vendor: str) -> str:
-    return "".join(c if c.isalnum() else "-" for c in vendor.lower()).strip("-") or "v"
+def _claim_id(vendor: str | None, span: str, index: int) -> str:
+    key = f"{vendor or ''}:{span}:{index}"
+    return hashlib.sha1(key.encode()).hexdigest()[:10]
 
 
 async def extract(
@@ -54,44 +56,47 @@ async def extract(
     *,
     bus: TelemetryBus,
     vendor: str | None = None,
-    tier: Literal["cheap", "premium"] = "cheap",
 ) -> list[Claim]:
+    """Return atomic claims found in `markdown`. Empty list on hard failure —
+    the orchestrator marks the vendor 'no_claims_extracted' and grey-cards it."""
     if not markdown.strip():
         return []
 
-    user = _USER_TEMPLATE.format(vendor=vendor or "Unknown", md=markdown[:14000])
     messages = [
-        {"role": "system", "content": EXTRACT_SYSTEM},
-        {"role": "user", "content": user},
+        {"role": "system", "content": _SYSTEM},
+        {"role": "user", "content": f"Vendor page text:\n\n{markdown[:12_000]}"},
     ]
-    _, parsed = await call_and_parse_json(
-        bus,
-        messages=messages,
-        tier=tier,
-        stage="extract",
-        vendor=vendor,
-        max_tokens=2048,
-    )
 
-    if not isinstance(parsed, list):
-        return []
-
-    claims: list[Claim] = []
-    slug = _slug(vendor or "v")
-    for i, raw in enumerate(parsed):
-        if not isinstance(raw, dict):
-            continue
+    async with measure(bus, stage="extract", vendor=vendor) as m:
         try:
-            c = Claim(
-                claim_id=f"{slug}-{i:03d}",
-                claim=str(raw.get("claim", "")).strip(),
-                metric=(str(raw["metric"]) if raw.get("metric") else None),
-                magnitude=(str(raw["magnitude"]) if raw.get("magnitude") else None),
-                claim_type=str(raw.get("claim_type", "other")).strip() or "other",
-                verbatim_span=str(raw.get("verbatim_span", "")).strip(),
-            )
-            if c.claim:
-                claims.append(c)
+            result = await chat("cheap", messages, max_tokens=1024, temperature=0.0)
+            m.tokens_in = result.tokens_in
+            m.tokens_out = result.tokens_out
+            m.model = result.model
+            m.cost_usd = cost_usd(result.model, result.tokens_in, result.tokens_out)
+
+            raw = _strip_json(result.text)
+            data = json.loads(raw)
+            if not isinstance(data, list):
+                return []
+
+            claims: list[Claim] = []
+            for i, item in enumerate(data):
+                if not isinstance(item, dict):
+                    continue
+                try:
+                    claims.append(
+                        Claim(
+                            claim_id=_claim_id(vendor, item.get("verbatim_span", ""), i),
+                            claim=str(item.get("claim", "")),
+                            metric=item.get("metric"),
+                            magnitude=item.get("magnitude"),
+                            claim_type=str(item.get("claim_type", "performance")),
+                            verbatim_span=str(item.get("verbatim_span", "")),
+                        )
+                    )
+                except Exception:
+                    continue
+            return claims
         except Exception:
-            continue
-    return claims
+            return []

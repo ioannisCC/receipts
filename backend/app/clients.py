@@ -2,15 +2,13 @@
 
 Boundary: messages-in, text+token-counts-out. We deliberately do NOT unify SDK-native
 tool_use here — OpenAI and Anthropic tool schemas diverge enough that abstracting
-them at this seam leaks complexity into every caller. Structured output is done in
-the STAGE by prompting for JSON and pydantic-validating the parse via the
-`call_and_parse_json` helper below. A parse failure or low confidence on cheap-tier
-just escalates to premium — the cascade is the safety net."""
+them at this seam leaks complexity into every caller. Structured output for the
+judge is done in the STAGE by prompting for JSON and pydantic-validating the parse.
+A parse failure or low confidence on cheap-tier just escalates to premium — the
+cascade is the safety net."""
 
 from __future__ import annotations
 
-import json
-import re
 from dataclasses import dataclass
 from typing import Any, Literal, Optional
 
@@ -18,23 +16,20 @@ from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 
 from app.config import settings
-from app.telemetry import TelemetryBus, measure
 
 
 Tier = Literal["cheap", "premium"]
 
 
 # COST TABLE — verified at platform.claude.com on 2026-06-10.
-# Sonnet 4.6: $3 / MTok input, $15 / MTok output.
-# Haiku 4.5:  $1 / MTok input, $5  / MTok output  (temp cheap-tier proxy).
-# Qwen3-8B-FP8 (real Akamai cheap tier) is imputed at $0.0: on hackathon credits
-# the marginal per-token cost is zero — the honest framing and the framing that
-# maximizes race-screen contrast when the swap lands.
+# Sonnet 4.6: $3 / MTok input, $15 / MTok output (base, no cache, no batch).
+# Cheap tier (Akamai/Qwen3-8B-FP8 on shared vLLM cluster) is imputed at $0.0 per
+# token: on hackathon credits / our GPU the marginal per-token cost is zero. This
+# is the honest framing AND it maximizes race-screen contrast — premium burns real
+# dollars on stage, cheap does not.
 COST_TABLE: dict[str, dict[str, float]] = {
-    "Qwen/Qwen3-8B-FP8": {"input_per_mtok": 0.0, "output_per_mtok": 0.0},
-    "claude-haiku-4-5-20251001": {"input_per_mtok": 1.0, "output_per_mtok": 5.0},
-    "claude-haiku-4-5": {"input_per_mtok": 1.0, "output_per_mtok": 5.0},
-    "claude-sonnet-4-6": {"input_per_mtok": 3.0, "output_per_mtok": 15.0},
+    settings.CHEAP_MODEL: {"input_per_mtok": 0.0, "output_per_mtok": 0.0},
+    settings.PREMIUM_MODEL: {"input_per_mtok": 3.0, "output_per_mtok": 15.0},
 }
 
 
@@ -92,10 +87,7 @@ async def chat(
     OpenAI shape: [{"role": "system"|"user"|"assistant", "content": "..."}]."""
     timeout = timeout_s if timeout_s is not None else settings.LLM_TIMEOUT_S
 
-    if tier == "cheap" and (
-        settings.AKAMAI_INFERENCE_URL == "http://REPLACE_AT_KICKOFF:8080/v1"
-        or not settings.AKAMAI_TOKEN
-    ):
+    if tier == "cheap" and settings.CHEAP_FALLBACK_TO_PREMIUM:
         tier = "premium"
 
     if tier == "cheap":
@@ -143,102 +135,3 @@ async def chat(
         tier="premium",
         raw=resp,
     )
-
-
-_JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
-
-
-def _try_parse_json(text: str) -> Any | None:
-    """Best-effort JSON extraction. Direct parse first, then strip a code fence,
-    then carve out the first {...} or [...] span."""
-    text = (text or "").strip()
-    if not text:
-        return None
-    try:
-        return json.loads(text)
-    except Exception:
-        pass
-    fence = _JSON_FENCE_RE.search(text)
-    if fence:
-        try:
-            return json.loads(fence.group(1))
-        except Exception:
-            pass
-    for open_ch, close_ch in (("[", "]"), ("{", "}")):
-        i = text.find(open_ch)
-        j = text.rfind(close_ch)
-        if 0 <= i < j:
-            try:
-                return json.loads(text[i : j + 1])
-            except Exception:
-                continue
-    return None
-
-
-async def call_and_parse_json(
-    bus: TelemetryBus,
-    *,
-    messages: list[dict[str, str]],
-    tier: Tier,
-    stage: str,
-    vendor: Optional[str] = None,
-    claim_id: Optional[str] = None,
-    max_tokens: int = 2048,
-    temperature: float = 0.0,
-    timeout_s: Optional[float] = None,
-    escalated: bool = False,
-) -> tuple[str, Any | None]:
-    """Single LLM call wrapped in measure(), JSON-parsed, with one retry on parse
-    failure ("JSON only, no commentary" reminder). Returns (raw_text, parsed_or_None).
-
-    The retry counts as its own telemetry event — both calls show up in the demo
-    stream. Caller passes `escalated=True` when this is the cascade's premium-tier
-    fallback after a cheap-tier miss."""
-    model_name = settings.CHEAP_MODEL if tier == "cheap" else settings.PREMIUM_MODEL
-
-    async with measure(
-        bus, stage=stage, model=model_name, vendor=vendor, claim_id=claim_id
-    ) as m:
-        m.escalated = escalated
-        result = await chat(
-            tier,
-            messages,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            timeout_s=timeout_s,
-        )
-        m.tokens_in = result.tokens_in
-        m.tokens_out = result.tokens_out
-        m.cost_usd = cost_usd(model_name, result.tokens_in, result.tokens_out)
-
-    parsed = _try_parse_json(result.text)
-    if parsed is not None:
-        return result.text, parsed
-
-    retry_messages = list(messages) + [
-        {"role": "assistant", "content": result.text},
-        {
-            "role": "user",
-            "content": (
-                "Your previous response was not valid JSON. "
-                "Output ONLY the JSON value, with no prose, no markdown, no code fence."
-            ),
-        },
-    ]
-    async with measure(
-        bus, stage=stage, model=model_name, vendor=vendor, claim_id=claim_id
-    ) as m:
-        m.escalated = escalated
-        result2 = await chat(
-            tier,
-            retry_messages,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            timeout_s=timeout_s,
-        )
-        m.tokens_in = result2.tokens_in
-        m.tokens_out = result2.tokens_out
-        m.cost_usd = cost_usd(model_name, result2.tokens_in, result2.tokens_out)
-
-    parsed2 = _try_parse_json(result2.text)
-    return result2.text, parsed2
