@@ -103,6 +103,22 @@ function scoreColor(score: number | null) {
 function fmtCost(n: number) { return `$${n.toFixed(4)}` }
 function fmtMs(ms: number) { return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s` }
 
+function vendorStatusLabel(v: VendorResult) {
+  if (v.credibility_score !== null) return `${Math.round(v.credibility_score * 100)}%`
+  if (v.status === 'unreachable') return 'not loaded'
+  if (v.status === 'no_claims_extracted') return 'no claims'
+  if (v.status === 'error') return 'error'
+  return 'checking...'
+}
+
+function vendorStatusTitle(v: VendorResult) {
+  if (v.credibility_score !== null) return 'Score out of 100 — how many of their claims were independently verified'
+  if (v.status === 'unreachable') return 'The page could not be loaded or scraped'
+  if (v.status === 'no_claims_extracted') return 'The page loaded, but no specific marketing claims were found'
+  if (v.status === 'error') return 'This vendor finished with an error'
+  return 'This vendor is still being checked'
+}
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function Tip({ text }: { text: string }) {
@@ -164,15 +180,24 @@ function VendorCard({ v, animIn }: { v: VendorResult; animIn: boolean }) {
         </div>
         {pct !== null ? (
           <div
-            title="Score out of 100 — how many of their claims were independently verified"
+            title={vendorStatusTitle(v)}
             style={{
               background: scoreColor(score), color: '#fff', fontWeight: 800,
               fontSize: 18, borderRadius: 8, padding: '4px 12px', lineHeight: 1.2, cursor: 'help',
             }}>
-            {pct}%
+            {vendorStatusLabel(v)}
           </div>
         ) : (
-          <div style={{ fontSize: 11, color: 'var(--muted)', fontStyle: 'italic' }}>checking...</div>
+          <div
+            title={vendorStatusTitle(v)}
+            style={{
+              fontSize: 11,
+              color: v.status === 'ok' ? 'var(--muted)' : '#6b7280',
+              fontStyle: 'italic',
+              whiteSpace: 'nowrap',
+            }}>
+            {vendorStatusLabel(v)}
+          </div>
         )}
       </div>
 
