@@ -14,13 +14,17 @@ VERDICT_WEIGHT: dict[Verdict, float] = {
 }
 
 
-def vendor_credibility(judgments: list[Judgment]) -> float | None:
+def score_vendor(judgments: list[Judgment]) -> float | None:
     """Weighted average of per-claim verdicts, in [0, 1]. Returns None when there
     is nothing to score yet (no claims extracted, or vendor unreachable)."""
     if not judgments:
         return None
     total = sum(VERDICT_WEIGHT[j.verdict] for j in judgments)
     return total / len(judgments)
+
+
+# Backwards-compat alias (kept until a caller is verified to use the new name).
+vendor_credibility = score_vendor
 
 
 def claim_inflation_index(vendors: list[VendorResult]) -> float:
@@ -43,6 +47,6 @@ def claim_inflation_index(vendors: list[VendorResult]) -> float:
 
 def finalize_market(result: MarketResult) -> MarketResult:
     for v in result.vendors:
-        v.credibility_score = vendor_credibility(v.judgments)
+        v.credibility_score = score_vendor(v.judgments)
     result.claim_inflation_index = claim_inflation_index(result.vendors)
     return result

@@ -43,9 +43,16 @@ async def main() -> int:
 
     async with httpx.AsyncClient(timeout=15.0) as http:
         print(f"GET  {base}/models")
-        r = await http.get(f"{base}/models", headers=headers)
-        r.raise_for_status()
-        print(f"  -> {r.status_code} {json.dumps(r.json(), indent=2)[:400]}")
+        try:
+            r = await http.get(f"{base}/models", headers=headers)
+            if r.status_code == 200:
+                print(f"  -> 200 {json.dumps(r.json(), indent=2)[:400]}")
+            else:
+                # Anthropic's OpenAI-compat layer doesn't implement /v1/models.
+                # That's fine — chat.completions is the only path stages depend on.
+                print(f"  -> {r.status_code} (skipped — endpoint may not implement /models)")
+        except Exception as e:
+            print(f"  -> skipped: {type(e).__name__}: {e}")
 
         print(f"\nPOST {base}/chat/completions  (model={settings.CHEAP_MODEL}, max_tokens=1)")
         body = {
