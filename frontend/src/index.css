@@ -131,3 +131,81 @@ html, body, #root {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(15, 23, 42, 0.10); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(15, 23, 42, 0.20); }
+
+/* Ambient gradient backdrop — three drifting soft blobs.
+   Sits behind everything. Cheap (CSS only) and atmospheric. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+  background: var(--bg);
+}
+.backdrop::before,
+.backdrop::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.55;
+}
+.backdrop::before {
+  width: 60vw;
+  height: 60vw;
+  top: -20vw;
+  left: -10vw;
+  background: radial-gradient(circle, oklch(0.82 0.12 264 / 0.7) 0%, transparent 70%);
+  animation: drift1 24s ease-in-out infinite alternate;
+}
+.backdrop::after {
+  width: 55vw;
+  height: 55vw;
+  bottom: -15vw;
+  right: -10vw;
+  background: radial-gradient(circle, oklch(0.86 0.10 320 / 0.6) 0%, transparent 70%);
+  animation: drift2 28s ease-in-out infinite alternate;
+}
+@keyframes drift1 {
+  from { transform: translate(0, 0) scale(1); }
+  to   { transform: translate(6vw, 4vw) scale(1.08); }
+}
+@keyframes drift2 {
+  from { transform: translate(0, 0) scale(1); }
+  to   { transform: translate(-5vw, -3vw) scale(1.06); }
+}
+
+/* Reveal keyframes — applied per element with stagger via animation-delay. */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-down {
+  from { opacity: 0; transform: translateY(-14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fade-in-left {
+  from { opacity: 0; transform: translateX(-18px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes scale-fade-out {
+  from { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: scale(0.96); }
+}
+
+.reveal-up    { animation: fade-up    0.6s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.reveal-down  { animation: fade-down  0.5s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.reveal-left  { animation: fade-in-left 0.55s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.reveal-fade  { animation: fade-in    0.5s ease-out both; }
+
+.d-0  { animation-delay: 0s; }
+.d-1  { animation-delay: 0.08s; }
+.d-2  { animation-delay: 0.16s; }
+.d-3  { animation-delay: 0.24s; }
+.d-4  { animation-delay: 0.32s; }
+.d-5  { animation-delay: 0.40s; }
+.d-6  { animation-delay: 0.48s; }

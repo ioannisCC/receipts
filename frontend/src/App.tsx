@@ -449,35 +449,150 @@ export default function App() {
   const activeVendors = parseVendorText(customText)
   const sorted = [...vendors].sort((a, b) => (b.credibility_score ?? -1) - (a.credibility_score ?? -1))
 
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]; if (!f) return
+    const r = new FileReader()
+    r.onload = ev => { setCustomText(ev.target?.result as string ?? ''); setCustomError('') }
+    r.readAsText(f)
+  }
+
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <>
+      {/* Ambient gradient backdrop */}
+      <div className="backdrop" />
 
-      {/* Header */}
-      <header style={{
-        padding: '20px 36px', borderBottom: '1px solid var(--border)',
-        background: 'rgba(255,255,255,0.6)',
-        backdropFilter: 'blur(20px) saturate(180%)',
-        WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-        display: 'flex', alignItems: 'baseline', gap: 18,
+      {/* Tiny floating header — always present, no chrome */}
+      <div style={{
+        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 20,
+        padding: '24px 36px',
+        display: 'flex', alignItems: 'baseline', gap: 14,
+        pointerEvents: 'none',
       }}>
-        <span className="headline-fade" style={{
-          fontSize: 28, fontWeight: 600, letterSpacing: '-0.03em', lineHeight: 1,
+        <span className="headline-fade reveal-up d-0" style={{
+          fontFamily: 'var(--font-serif)', fontSize: 22, fontWeight: 600,
+          letterSpacing: '-0.025em', lineHeight: 1,
         }}>Receipts</span>
-        <span style={{
-          color: 'var(--muted)', fontSize: 13, fontStyle: 'italic',
-          fontFamily: 'var(--font-serif)', fontWeight: 400, letterSpacing: '-0.005em',
+        {phase !== 'idle' && (
+          <span key={phase} className="reveal-fade d-1" style={{
+            color: 'var(--muted)', fontSize: 12,
+            fontFamily: 'var(--font-serif)', fontStyle: 'italic',
+          }}>
+            Burden of proof for AI vendor claims.
+          </span>
+        )}
+      </div>
+
+      {phase === 'idle' ? (
+        /* ───── IDLE HERO ───── */
+        <div style={{
+          minHeight: '100vh',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          padding: '110px 24px 80px',
         }}>
-          Burden of proof for AI vendor claims.
-        </span>
-      </header>
+          <div style={{ maxWidth: 660, width: '100%', textAlign: 'center' }}>
 
-      {/* Two-column layout */}
-      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+            <div className="reveal-up d-1" style={{ marginBottom: 22 }}>
+              <span className="headline-fade" style={{
+                fontFamily: 'var(--font-serif)', fontSize: 'clamp(38px, 6.4vw, 68px)',
+                fontWeight: 600, letterSpacing: '-0.035em', lineHeight: 1.05,
+                display: 'inline-block',
+              }}>
+                Burden of proof,
+                <br/>
+                at market scale.
+              </span>
+            </div>
 
-        {/* Left sidebar: controls */}
-        <aside style={{
+            <div className="reveal-up d-2" style={{
+              color: 'var(--text-2)', fontSize: 15.5, lineHeight: 1.7,
+              fontFamily: 'var(--font-serif)', fontWeight: 400,
+              marginBottom: 36, maxWidth: 520, marginLeft: 'auto', marginRight: 'auto',
+            }}>
+              Paste a category's vendors below. Receipts reads each homepage, hunts
+              the public web for evidence, and scores what they can actually back up.
+            </div>
+
+            <div className="reveal-up d-3" style={{ marginBottom: 18 }}>
+              <textarea
+                value={customText}
+                onChange={e => { setCustomText(e.target.value); setCustomError('') }}
+                placeholder={'Intercom Fin, https://www.intercom.com/fin\nDecagon, https://decagon.ai\n…'}
+                rows={6}
+                style={{
+                  width: '100%', boxSizing: 'border-box',
+                  background: 'rgba(255,255,255,0.65)',
+                  border: `1px solid ${customError ? 'var(--verdict-bad)' : 'var(--border)'}`,
+                  borderRadius: 18, color: 'var(--text)', fontSize: 13.5,
+                  fontFamily: 'var(--font-mono)', padding: '18px 22px',
+                  resize: 'vertical', outline: 'none', lineHeight: 1.75,
+                  boxShadow: '0 10px 40px rgba(15,23,42,0.06), inset 0 1px 0 rgba(255,255,255,0.9)',
+                  backdropFilter: 'blur(20px) saturate(180%)',
+                  WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+                  transition: 'border-color 0.2s, box-shadow 0.2s',
+                }}
+              />
+              {customError && (
+                <div style={{ color: 'var(--verdict-bad)', fontSize: 12, marginTop: 8, textAlign: 'left' }}>
+                  {customError}
+                </div>
+              )}
+            </div>
+
+            <div className="reveal-up d-4" style={{ marginBottom: 14 }}>
+              <button
+                onClick={startAudit}
+                disabled={activeVendors.length === 0}
+                className="pill pill-primary"
+                style={{ height: 52, fontSize: 14.5, padding: '0 36px', minWidth: 220 }}
+              >
+                Audit the market →
+              </button>
+            </div>
+
+            <div className="reveal-up d-5" style={{
+              fontSize: 12, color: 'var(--muted)',
+              display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 14,
+              flexWrap: 'wrap',
+            }}>
+              {activeVendors.length > 0 ? (
+                <span>{activeVendors.length} {activeVendors.length === 1 ? 'vendor' : 'vendors'} parsed · usually 15–60s</span>
+              ) : (
+                <>
+                  <button
+                    onClick={() => { setCustomText(EXAMPLE_TEXT); setCustomError('') }}
+                    style={{
+                      background: 'none', border: 'none', color: 'var(--accent)',
+                      fontSize: 12, cursor: 'pointer', fontFamily: 'var(--font-sans)',
+                      textDecoration: 'underline', textUnderlineOffset: 3, padding: 0,
+                    }}>
+                    load 6 example vendors
+                  </button>
+                  <span>·</span>
+                  <label style={{
+                    cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 3,
+                    color: 'var(--muted)',
+                  }}>
+                    upload .csv / .txt
+                    <input type="file" accept=".csv,.txt" style={{ display: 'none' }} onChange={handleFileUpload} />
+                  </label>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+      /* ───── ACTIVE LAYOUT (running / done) ───── */
+      <div className="reveal-fade" style={{
+        minHeight: '100vh', display: 'flex', flexDirection: 'column',
+        paddingTop: 56,
+      }}>
+        {/* Two-column layout */}
+        <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+
+        {/* Left sidebar: controls — slides in from the left */}
+        <aside className="reveal-left d-1" style={{
           width: sidebarWidth, flexShrink: 0,
-          background: 'rgba(255,255,255,0.4)',
+          background: 'rgba(255,255,255,0.35)',
           backdropFilter: 'blur(20px) saturate(180%)',
           WebkitBackdropFilter: 'blur(20px) saturate(180%)',
           padding: '28px 24px',
@@ -602,10 +717,10 @@ export default function App() {
         {/* Right: stats + results */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-          {/* Stats bar */}
-          <div style={{
+          {/* Stats bar — slides down from the top */}
+          <div className="reveal-down d-2" style={{
             display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)',
-            background: 'rgba(255,255,255,0.5)',
+            background: 'rgba(255,255,255,0.45)',
             backdropFilter: 'blur(20px) saturate(180%)',
             WebkitBackdropFilter: 'blur(20px) saturate(180%)',
             borderBottom: '1px solid var(--border)',
@@ -618,7 +733,7 @@ export default function App() {
               { label: 'Re-checked', value: stats.totalJudgments > 0 ? `${stats.escalations}/${stats.totalJudgments}` : '—', tip: 'Cheap-tier escalations to the frontier model — the cascade in action' },
               { label: 'Progress', value: activeVendors.length > 0 ? `${vendors.length} / ${activeVendors.length}` : `${vendors.length} done`, tip: 'Vendors completed vs total' },
             ].map(({ label, value, tip, mono }, i) => (
-              <div key={label} style={{
+              <div key={label} className={`reveal-up d-${3 + i}`} style={{
                 borderLeft: i === 0 ? 'none' : '1px solid var(--border)',
               }}>
                 <StatBox label={label} value={value} tip={tip} mono={mono} />
@@ -626,26 +741,8 @@ export default function App() {
             ))}
           </div>
 
-          {/* Results area */}
-          <main style={{ flex: 1, overflowY: 'auto', padding: '32px 36px' }}>
-
-            {/* Idle */}
-            {phase === 'idle' && (
-              <div style={{ textAlign: 'center', marginTop: 80, color: 'var(--muted)', maxWidth: 520, marginLeft: 'auto', marginRight: 'auto' }}>
-                <div className="headline-fade" style={{
-                  fontSize: 48, fontWeight: 600, letterSpacing: '-0.025em',
-                  lineHeight: 1.1, marginBottom: 18,
-                }}>
-                  Burden of proof,<br/>at market scale.
-                </div>
-                <div style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--text-2)', fontFamily: 'var(--font-serif)', fontWeight: 400 }}>
-                  Paste a category's vendors on the left.
-                  Receipts reads each homepage, decomposes the marketing copy into
-                  atomic claims, hunts the public web for evidence, and scores each
-                  vendor on what they can actually back up.
-                </div>
-              </div>
-            )}
+          {/* Results area — fades in after the stats bar lands */}
+          <main className="reveal-fade d-3" style={{ flex: 1, overflowY: 'auto', padding: '32px 36px' }}>
 
             {/* Loading */}
             {phase === 'running' && sorted.length === 0 && (
@@ -705,8 +802,10 @@ export default function App() {
           </main>
         </div>
       </div>
+      </div>
+      )}
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-    </div>
+    </>
   )
 }
