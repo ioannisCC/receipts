@@ -161,9 +161,14 @@ function StatBox({ label, value, tip, mono }: { label: string; value: string; ti
   )
 }
 
+function hostOf(u: string): string {
+  try { return new URL(u).hostname.replace(/^www\./, '') } catch { return u }
+}
+
 function VendorCard({ v, animIn }: { v: VendorResult; animIn: boolean }) {
   const [adviceOpen, setAdviceOpen] = useState(false)
   const [claimsOpen, setClaimsOpen] = useState(false)
+  const [sourcesOpen, setSourcesOpen] = useState(false)
   const score = v.credibility_score
   const pct = score !== null ? Math.round(score * 100) : null
 
@@ -173,6 +178,10 @@ function VendorCard({ v, animIn }: { v: VendorResult; animIn: boolean }) {
   )
 
   const judgeMap = Object.fromEntries(v.judgments.map(j => [j.claim_id, j]))
+
+  // Unique web sources cited across all judgments (the receipts the judge kept
+  // after the receipt-consistency guard filtered them to actual evidence URLs).
+  const uniqueSources = Array.from(new Set(v.judgments.flatMap(j => j.receipts)))
 
   return (
     <div className="glass" style={{
@@ -318,9 +327,57 @@ function VendorCard({ v, animIn }: { v: VendorResult; animIn: boolean }) {
                       )}
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--text-2)', lineHeight: 1.5 }}>{j.rationale}</div>
+                    {j.receipts.length > 0 && (
+                      <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <span style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Receipts</span>
+                        {j.receipts.map((url, i) => (
+                          <a key={i} href={url} target="_blank" rel="noreferrer" title={url} style={{
+                            fontSize: 10, color: 'var(--accent)',
+                            background: 'rgba(99,102,241,0.10)',
+                            padding: '2px 8px', borderRadius: 9999,
+                            textDecoration: 'none', fontFamily: 'var(--font-mono)',
+                            maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                          }}>{hostOf(url)} ↗</a>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )
               })}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Web sources — always visible toggle, lists every URL the judge cited */}
+      {uniqueSources.length > 0 && (
+        <>
+          <button onClick={() => setSourcesOpen(x => !x)} className="pill" style={{ height: 30, fontSize: 12, padding: '0 14px', marginRight: 6, marginTop: 8 }}>
+            {sourcesOpen ? 'Hide sources' : `${uniqueSources.length} web source${uniqueSources.length === 1 ? '' : 's'}`}
+          </button>
+          {sourcesOpen && (
+            <div style={{
+              marginTop: 10, padding: '12px 14px',
+              background: 'var(--surface-2)', borderRadius: 12,
+              border: '1px solid var(--border)',
+            }}>
+              <div style={{ fontSize: 10, color: 'var(--muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>
+                What the public web actually says
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {uniqueSources.map((url, i) => (
+                  <a key={i} href={url} target="_blank" rel="noreferrer" style={{
+                    fontSize: 11, color: 'var(--text)', textDecoration: 'none',
+                    display: 'flex', alignItems: 'baseline', gap: 8,
+                    padding: '4px 8px', borderRadius: 6,
+                    background: 'rgba(255,255,255,0.5)',
+                  }}>
+                    <span style={{ color: 'var(--accent)', fontWeight: 600, fontSize: 11, minWidth: 110 }}>{hostOf(url)}</span>
+                    <span style={{ color: 'var(--muted)', fontFamily: 'var(--font-mono)', fontSize: 10, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{url.replace(/^https?:\/\//, '').replace(/^[^/]+/, '')}</span>
+                    <span style={{ marginLeft: 'auto', color: 'var(--muted)', fontSize: 10 }}>↗</span>
+                  </a>
+                ))}
+              </div>
             </div>
           )}
         </>
