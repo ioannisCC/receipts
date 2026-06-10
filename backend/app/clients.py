@@ -92,6 +92,12 @@ async def chat(
     OpenAI shape: [{"role": "system"|"user"|"assistant", "content": "..."}]."""
     timeout = timeout_s if timeout_s is not None else settings.LLM_TIMEOUT_S
 
+    if tier == "cheap" and (
+        settings.AKAMAI_INFERENCE_URL == "http://REPLACE_AT_KICKOFF:8080/v1"
+        or not settings.AKAMAI_TOKEN
+    ):
+        tier = "premium"
+
     if tier == "cheap":
         model = settings.CHEAP_MODEL
         resp = await cheap_client().chat.completions.create(

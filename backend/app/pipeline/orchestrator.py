@@ -1,32 +1,33 @@
-"""Per-vendor state machine. Batch loop is a later dispatch.
+"""Per-vendor state machine + market-level batch runner.
 
 URL -> [INGEST] -> [A: EXTRACT] -> per claim concurrent [B: HUNT] + [C: JUDGE]
-                                -> [D: ADVISE] -> score -> VendorResult
+                                -> [D: ADVISE] -> red-flag scan -> score -> VendorResult
 
 Per-stage timeouts (asyncio.wait_for). Any stage failure degrades to a grey
-state on that claim/vendor — the audit_vendor() call never raises."""
+state on that claim/vendor — audit_vendor() never raises."""
 
 from __future__ import annotations
 
 import asyncio
 
 from app.config import settings
-from app.schemas import (
-    Claim,
-    Evidence,
-    Judgment,
-    MarketResult,
-    VendorResult,
-    Verdict,
-)
-from app.scoring import score_vendor
-from app.telemetry import TelemetryBus
-
 from app.pipeline.advise import advise
 from app.pipeline.extract import extract
 from app.pipeline.hunt import hunt
 from app.pipeline.ingest import ingest
 from app.pipeline.judge import judge
+from app.pipeline.red_flag import detect as detect_red_flags, claim_quality_score
+from app.schemas import (
+    Claim,
+    Evidence,
+    Judgment,
+    MarketResult,
+    TelemetryEvent,
+    VendorResult,
+    Verdict,
+)
+from app.scoring import finalize_market, score_vendor
+from app.telemetry import TelemetryBus
 
 
 async def audit_vendor(
@@ -104,10 +105,12 @@ async def audit_vendor(
     except Exception:
         advice = ""
 
-    # 5) Score
+    # 5) Red-flag scan + score
+    red_flags = detect_red_flags(claims)
+    quality = claim_quality_score(claims, red_flags)
     score = score_vendor(judgments)
 
-    return VendorResult(
+    result = VendorResult(
         vendor=vendor,
         url=url,
         status="ok",
@@ -115,7 +118,18 @@ async def audit_vendor(
         judgments=list(judgments),
         credibility_score=score,
         advice=advice,
+        red_flags=red_flags,
+        claim_quality_score=quality,
     )
+
+    # Emit lifecycle event so the frontend can render the card immediately
+    bus.emit(TelemetryEvent(
+        stage="vendor_complete",
+        vendor=vendor,
+        payload=result.model_dump(mode="json"),
+    ))
+
+    return result
 
 
 async def run_market(
@@ -127,6 +141,31 @@ async def run_market(
     n: int | None = None,
     semaphore_size: int | None = None,
 ) -> MarketResult:
-    """Batch loop is a later dispatch — current implementation runs single vendors
-    sequentially for testing the server surface."""
-    raise NotImplementedError("batch loop — next dispatch")
+    """Run all vendors concurrently under a market-level semaphore."""
+    urls = vendor_urls[:n] if n is not None else vendor_urls
+    sem = asyncio.Semaphore(semaphore_size or settings.SEMAPHORE)
+    market = MarketResult(category=category)
+
+    async def _run(vendor: str, url: str):
+        async with sem:
+            return await audit_vendor(vendor, url, bus=bus, naive=naive)
+
+    results = await asyncio.gather(
+        *[_run(v, u) for v, u in urls], return_exceptions=True
+    )
+
+    for i, (vendor, url) in enumerate(urls):
+        r = results[i]
+        if isinstance(r, Exception):
+            market.vendors.append(VendorResult(vendor=vendor, url=url, status="error"))
+        else:
+            market.vendors.append(r)
+
+    finalize_market(market)
+
+    bus.emit(TelemetryEvent(
+        stage="market_complete",
+        payload=market.model_dump(mode="json"),
+    ))
+
+    return market
