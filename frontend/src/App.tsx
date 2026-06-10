@@ -352,10 +352,7 @@ function VendorCard({ v, animIn }: { v: VendorResult; animIn: boolean }) {
 
 type Phase = 'idle' | 'running' | 'done'
 
-type View = 'landing' | 'demo'
-
 export default function App() {
-  const [view, setView] = useState<View>('landing')
   const [customText, setCustomText] = useState('')
   const [customError, setCustomError] = useState('')
   const [phase, setPhase] = useState<Phase>('idle')
@@ -469,70 +466,11 @@ export default function App() {
     r.readAsText(f)
   }
 
-  /* ═══════════ LANDING VIEW (aperture-style) ═══════════ */
-  if (view === 'landing') {
-    return (
-      <>
-        <div className="aurora-bg" />
-        <div style={{
-          minHeight: '100vh',
-          display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center',
-          padding: '24px',
-          textAlign: 'center',
-          gap: 30,
-        }}>
-          <div className="reveal-up d-0" style={{ color: 'oklch(0.18 0.02 270 / 0.85)' }}>
-            <ReceiptsLogo size={56} />
-          </div>
-
-          <h1 className="reveal-up d-1 headline-fade" style={{
-            fontFamily: 'var(--font-sans)',
-            fontSize: 'clamp(64px, 10vw, 144px)',
-            fontWeight: 700,
-            letterSpacing: '-0.055em',
-            lineHeight: 1,
-            margin: 0,
-          }}>
-            Receipts
-          </h1>
-
-          <p className="reveal-up d-2" style={{
-            maxWidth: 720,
-            fontFamily: 'var(--font-sans)',
-            fontSize: 'clamp(20px, 2.4vw, 30px)',
-            fontWeight: 400,
-            color: 'var(--text-2)',
-            lineHeight: 1.35,
-            letterSpacing: '-0.015em',
-          }}>
-            Burden of proof{' '}
-            <RotatingText phrases={[
-              'for AI vendor claims.',
-              'at market scale.',
-              'with public receipts.',
-            ]} />
-          </p>
-
-          <button
-            onClick={() => setView('demo')}
-            className="reveal-up d-3 pill pill-primary"
-            style={{
-              height: 58, fontSize: 15, padding: '0 46px', minWidth: 220,
-              marginTop: 10,
-            }}>
-            Go to demo →
-          </button>
-        </div>
-      </>
-    )
-  }
-
-  /* ═══════════ DEMO VIEW ═══════════ */
   return (
     <>
-      {/* Ambient gradient backdrop */}
-      <div className="backdrop" />
+      {/* Aurora gradient backdrop — radial blooms over a diagonal warm→cool
+          base, with two slowly drifting linear-gradient layers on top. */}
+      <div className="aurora-bg" />
 
       {/* Tiny floating header — only shown when audit is running/done.
           In demo idle the brand sits big in the centre of the hero. */}
@@ -543,22 +481,16 @@ export default function App() {
           display: 'flex', alignItems: 'center', gap: 12,
           pointerEvents: 'none',
         }}>
-          <button
-            onClick={() => setView('landing')}
-            className="reveal-fade d-0"
-            style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              background: 'none', border: 'none', padding: 0,
-              cursor: 'pointer', pointerEvents: 'auto',
-              color: 'var(--text)',
-            }}
-            title="Back to landing">
+          <div className="reveal-fade d-0" style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            color: 'var(--text)',
+          }}>
             <ReceiptsLogo size={20} className="headline-fade" />
             <span className="headline-fade" style={{
               fontFamily: 'var(--font-sans)', fontSize: 20, fontWeight: 700,
               letterSpacing: '-0.035em', lineHeight: 1,
             }}>Receipts</span>
-          </button>
+          </div>
           <span className="reveal-fade d-1" style={{
             color: 'var(--muted)', fontSize: 12,
             fontFamily: 'var(--font-sans)',

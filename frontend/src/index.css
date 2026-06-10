@@ -118,10 +118,11 @@ html, body, #root {
   border-radius: var(--radius-lg);
 }
 
-/* Gradient-fade headline — the aperture move. Font-family is set by the
-   caller so titles can switch typeface without dropping the clip. */
+/* Gradient-fade headline — very subtle. Top is full slate, bottom is 90%
+   slate. Almost solid; the fade is there only to soften the optical weight
+   of huge display type, not as an aesthetic move. */
 .headline-fade {
-  background: linear-gradient(180deg, var(--text) 0%, oklch(0.18 0.02 270 / 0.4) 100%);
+  background: linear-gradient(180deg, var(--text) 0%, oklch(0.18 0.02 270 / 0.88) 100%);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
