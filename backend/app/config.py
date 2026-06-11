@@ -41,7 +41,10 @@ class Settings(BaseSettings):
     # Magnific (Freepik) image gen — for the honest-ad stage. Eligibility floor:
     # using a second model family alongside Akamai-tier inference.
     FREEPIK_API_KEY: str = ""
-    HONEST_AD_TOP_N: int = 3
+    # Optional command for OAuth/MCP-backed image generation. It receives JSON on
+    # stdin and must print either a URL or {"url": "..."} on stdout.
+    HONEST_AD_IMAGE_COMMAND: str = ""
+    HONEST_AD_TOP_N: int = 25
 
 
 settings = Settings()

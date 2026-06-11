@@ -18,7 +18,7 @@ from app.pipeline.extract import extract
 from app.pipeline.hunt import hunt
 from app.pipeline.ingest import ingest
 from app.pipeline.judge import judge
-from app.schemas import Judgment, MarketResult, VendorResult
+from app.schemas import HonestAdStatus, Judgment, MarketResult, VendorResult
 from app.scoring import finalize_market, vendor_credibility
 from app.telemetry import TelemetryBus, TelemetryEvent
 
@@ -152,20 +152,37 @@ async def run_market(
     # wrapped in its own try/except so a Magnific failure greys that vendor's
     # ad without ever stalling the sweep. Sequential by design — limits credit
     # burn during dev and concurrent Magnific calls aren't useful at N=1-3.
-    from app.pipeline.honest_ad import generate_honest_ad, pick_ad_candidates
+    from app.pipeline.honest_ad import (
+        generate_honest_ad,
+        pick_ad_candidates,
+        prepare_honest_ad,
+    )
 
     candidates = pick_ad_candidates(list(market.vendors), top_n=settings.HONEST_AD_TOP_N)
     for vendor in candidates:
+        if not prepare_honest_ad(vendor):
+            continue
+        bus.partial_result = market
+        bus.emit(
+            TelemetryEvent(
+                stage="honest_ad_pending",
+                vendor=vendor.vendor,
+                payload={"n_supported_claims": len(vendor.honest_ad_claims)},
+            )
+        )
         try:
             url, claims = await asyncio.wait_for(
                 generate_honest_ad(vendor, bus=bus),
-                timeout=90.0,
+                timeout=125.0,
             )
             vendor.honest_ad_url = url
             vendor.honest_ad_claims = claims
         except Exception:
             # Grey-card the ad; sweep continues.
-            pass
+            vendor.honest_ad_status = HonestAdStatus.IMAGE_UNAVAILABLE
+            vendor.honest_ad_error = "Image generation failed"
+        finally:
+            bus.partial_result = market
 
     # Snapshot telemetry totals into the result so the dashboard has one source
     # of truth alongside the JSONL replay log.
