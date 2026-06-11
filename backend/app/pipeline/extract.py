@@ -11,6 +11,7 @@ import json
 import re
 
 from app.clients import chat, cost_usd
+from app.config import settings
 from app.schemas import Claim
 from app.telemetry import TelemetryBus, measure
 
@@ -147,6 +148,7 @@ async def extract(
     ]
 
     async with measure(bus, stage="extract", vendor=vendor) as m:
+        m.model = settings.PREMIUM_MODEL if settings.CHEAP_FALLBACK_TO_PREMIUM else settings.CHEAP_MODEL
         try:
             result = await chat("cheap", messages, max_tokens=1024, temperature=0.0)
             m.tokens_in = result.tokens_in

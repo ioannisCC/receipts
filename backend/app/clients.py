@@ -9,6 +9,7 @@ cascade is the safety net."""
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any, Literal, Optional
 
@@ -109,12 +110,15 @@ async def chat(
                 no_think_messages.append(m)
         if not injected:
             no_think_messages.insert(0, {"role": "system", "content": "/no_think"})
-        resp = await cheap_client().chat.completions.create(
-            model=model,
-            messages=no_think_messages,  # type: ignore[arg-type]
-            max_tokens=max_tokens,
-            temperature=temperature,
-            timeout=timeout,
+        resp = await asyncio.wait_for(
+            cheap_client().chat.completions.create(
+                model=model,
+                messages=no_think_messages,  # type: ignore[arg-type]
+                max_tokens=max_tokens,
+                temperature=temperature,
+                timeout=timeout,
+            ),
+            timeout=timeout + 0.5,
         )
         msg = resp.choices[0].message if resp.choices else None
         text = (msg.content or "") if msg else ""

@@ -43,6 +43,13 @@ interface MarketResult {
   telemetry_summary?: Record<string, unknown>
 }
 
+interface AttemptUsage {
+  attempts: number
+  cost: number
+  tokens: number
+  noResponse: number
+}
+
 interface RunStats {
   totalCost: number
   totalTokens: number
@@ -50,6 +57,8 @@ interface RunStats {
   totalJudgments: number
   calls: number
   elapsedMs: number
+  modelUsage: Record<string, AttemptUsage>
+  toolUsage: Record<string, AttemptUsage>
 }
 
 // ── Data ─────────────────────────────────────────────────────────────────────
@@ -106,6 +115,29 @@ function scoreColor(score: number | null) {
 function fmtCost(n: number) { return `$${n.toFixed(4)}` }
 function fmtMs(ms: number) { return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s` }
 
+function modelLabel(model: string) {
+  if (model.includes('claude')) return 'Claude Sonnet 4.6'
+  if (model.includes('qwen3')) return 'Qwen 3'
+  if (model.includes('Qwen')) return 'Qwen 3'
+  return model
+}
+
+function isFrontierModel(model: string) {
+  return model.toLowerCase().includes('claude')
+}
+
+function isCheapModel(model: string) {
+  const lower = model.toLowerCase()
+  return lower.includes('qwen') || lower.includes('akamai')
+}
+
+function toolLabelForStage(stage: string) {
+  if (stage === 'hunt') return 'Tavily search'
+  if (stage === 'ingest') return 'Page scrape'
+  if (stage === 'honest_ad') return 'Magnific image'
+  return null
+}
+
 function vendorStatusLabel(v: VendorResult) {
   if (v.credibility_score !== null) return `${Math.round(v.credibility_score * 100)}%`
   if (v.status === 'unreachable') return 'not loaded'
@@ -161,6 +193,69 @@ function StatBox({ label, value, tip, mono }: { label: string; value: string; ti
   )
 }
 
+function CostStatBox({ stats }: { stats: RunStats }) {
+  const rows = [
+    ...Object.entries(stats.modelUsage).map(([name, usage]) => ({
+      key: `model:${name}`,
+      label: modelLabel(name),
+      raw: name,
+      usage,
+      kind: 'model',
+    })),
+    ...Object.entries(stats.toolUsage).map(([name, usage]) => ({
+      key: `tool:${name}`,
+      label: name,
+      raw: name,
+      usage,
+      kind: 'tool',
+    })),
+  ].sort((a, b) => b.usage.cost - a.usage.cost || b.usage.attempts - a.usage.attempts)
+
+  return (
+    <div style={{ textAlign: 'center', padding: '14px 8px' }}>
+      <div style={{
+        fontSize: 19, fontWeight: 700,
+        fontFamily: 'var(--font-mono)',
+        color: 'var(--text)',
+      }}>
+        {fmtCost(stats.totalCost)}
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2, fontWeight: 600 }}>LLM spend</div>
+      <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 2, padding: '0 4px', lineHeight: 1.4 }}>
+        Model token cost; tools shown as attempts
+      </div>
+      <div style={{
+        marginTop: 8,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 4,
+        alignItems: 'center',
+      }}>
+        {rows.length > 0 ? rows.slice(0, 5).map(({ key, label, raw, usage, kind }) => (
+          <div key={key} title={`${raw} · ${usage.tokens} tokens`} style={{
+            maxWidth: '100%',
+            fontSize: 10,
+            color: 'var(--text-2)',
+            background: 'rgba(255,255,255,0.55)',
+            border: '1px solid var(--border)',
+            borderRadius: 9999,
+            padding: '2px 8px',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}>
+            {label} {kind === 'tool' ? 'tool' : 'model'} · {usage.attempts} attempt{usage.attempts === 1 ? '' : 's'}
+            {kind === 'model' && usage.noResponse > 0 ? ` · ${usage.noResponse} no response` : ''}
+            {' · '}{kind === 'tool' ? 'pricing not tracked' : fmtCost(usage.cost)}
+          </div>
+        )) : (
+          <div style={{ fontSize: 10, color: '#9ca3af' }}>Waiting for attempts</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function hostOf(u: string): string {
   try { return new URL(u).hostname.replace(/^www\./, '') } catch { return u }
 }
@@ -209,7 +304,7 @@ function VendorCard({ v, animIn }: { v: VendorResult; animIn: boolean }) {
               color: scoreColor(score), fontFamily: 'var(--font-serif)', fontWeight: 600,
               fontSize: 28, lineHeight: 1, letterSpacing: '-0.02em', cursor: 'help',
             }}>
-            {pct}
+            {pct}%
           </div>
         ) : (
           <div
@@ -415,6 +510,7 @@ export default function App() {
   const [phase, setPhase] = useState<Phase>('idle')
   const [stats, setStats] = useState<RunStats>({
     totalCost: 0, totalTokens: 0, escalations: 0, totalJudgments: 0, calls: 0, elapsedMs: 0,
+    modelUsage: {}, toolUsage: {},
   })
   const [vendors, setVendors] = useState<VendorResult[]>([])
   const [animedIn, setAnimedIn] = useState<Set<string>>(new Set())
@@ -455,7 +551,7 @@ export default function App() {
     setCustomError('')
     stopTimers()
     setPhase('running')
-    setStats({ totalCost: 0, totalTokens: 0, escalations: 0, totalJudgments: 0, calls: 0, elapsedMs: 0 })
+    setStats({ totalCost: 0, totalTokens: 0, escalations: 0, totalJudgments: 0, calls: 0, elapsedMs: 0, modelUsage: {}, toolUsage: {} })
     setVendors([])
     setAnimedIn(new Set())
     setMarketResult(null)
@@ -482,13 +578,37 @@ export default function App() {
       evtRef.current = es
       es.addEventListener('telemetry', (e) => {
         const ev: TelemetryEvent = JSON.parse(e.data)
+        const eventTokens = ev.tokens_in + ev.tokens_out
+        const toolLabel = toolLabelForStage(ev.stage)
         setStats(s => ({
           ...s,
           totalCost: s.totalCost + ev.cost_usd,
-          totalTokens: s.totalTokens + ev.tokens_in + ev.tokens_out,
+          totalTokens: s.totalTokens + eventTokens,
           escalations: ev.escalated ? s.escalations + 1 : s.escalations,
           totalJudgments: ev.stage.startsWith('judge') ? s.totalJudgments + 1 : s.totalJudgments,
           calls: s.calls + 1,
+          modelUsage: ev.model
+            ? {
+                ...s.modelUsage,
+                [ev.model]: {
+                  attempts: (s.modelUsage[ev.model]?.attempts ?? 0) + 1,
+                  cost: (s.modelUsage[ev.model]?.cost ?? 0) + ev.cost_usd,
+                  tokens: (s.modelUsage[ev.model]?.tokens ?? 0) + eventTokens,
+                  noResponse: (s.modelUsage[ev.model]?.noResponse ?? 0) + (eventTokens === 0 ? 1 : 0),
+                },
+              }
+            : s.modelUsage,
+          toolUsage: toolLabel
+            ? {
+                ...s.toolUsage,
+                [toolLabel]: {
+                  attempts: (s.toolUsage[toolLabel]?.attempts ?? 0) + 1,
+                  cost: (s.toolUsage[toolLabel]?.cost ?? 0) + ev.cost_usd,
+                  tokens: (s.toolUsage[toolLabel]?.tokens ?? 0) + eventTokens,
+                  noResponse: s.toolUsage[toolLabel]?.noResponse ?? 0,
+                },
+              }
+            : s.toolUsage,
         }))
         if (ev.stage === 'market_done') { setPhase('done'); stopTimers(); fetchResults(accepted.run_id) }
       })
@@ -515,6 +635,23 @@ export default function App() {
 
   const activeVendors = parseVendorText(customText)
   const sorted = [...vendors].sort((a, b) => (b.credibility_score ?? -1) - (a.credibility_score ?? -1))
+  const modelNames = Object.keys(stats.modelUsage)
+  const usingFrontier = modelNames.some(isFrontierModel)
+  const usingCheap = modelNames.some(isCheapModel)
+  const frontierOnlyMode = usingFrontier && !usingCheap
+  const routingStat = frontierOnlyMode
+    ? {
+        label: 'Mode',
+        value: 'Frontier only',
+        tip: 'Claude fallback is enabled, so the audit skips the slow Akamai/Qwen endpoint for this run.',
+        mono: false,
+      }
+    : {
+        label: 'Re-checked',
+        value: stats.totalJudgments > 0 ? `${stats.escalations}/${stats.totalJudgments}` : '—',
+        tip: 'Claims sent from cheap-tier review to frontier review',
+        mono: false,
+      }
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]; if (!f) return
@@ -783,9 +920,11 @@ export default function App() {
                 display: 'inline-block', fontSize: 11, color: 'var(--accent)', fontWeight: 500,
                 padding: '2px 10px', borderRadius: 9999,
                 background: 'var(--accent-soft)',
-              }}>re-checked</span>
+              }}>{frontierOnlyMode ? 'frontier fallback' : 're-checked'}</span>
               <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 5, lineHeight: 1.55 }}>
-                Cheap-tier was uncertain — frontier model re-judged this claim. The visible cost of the cascade routing.
+                {frontierOnlyMode
+                  ? 'Claude-only fallback is on, so the demo stays fast while the Akamai/Qwen endpoint is being fixed.'
+                  : 'Cheap-tier was uncertain — frontier model re-judged this claim. The visible cost of the cascade routing.'}
               </div>
             </div>
           </div>
@@ -818,15 +957,17 @@ export default function App() {
             borderBottom: '1px solid var(--border)',
             flexShrink: 0,
           }}>
+            <div className="reveal-up d-3">
+              <CostStatBox stats={stats} />
+            </div>
             {[
-              { label: 'Total cost', value: fmtCost(stats.totalCost), tip: 'AI inference spend on this audit', mono: true },
-              { label: 'Elapsed', value: fmtMs(stats.elapsedMs), tip: 'Wall-clock time since the audit started' },
-              { label: 'Calls', value: String(stats.calls), tip: 'External calls measured by the telemetry bus' },
-              { label: 'Re-checked', value: stats.totalJudgments > 0 ? `${stats.escalations}/${stats.totalJudgments}` : '—', tip: 'Cheap-tier escalations to the frontier model — the cascade in action' },
-              { label: 'Progress', value: activeVendors.length > 0 ? `${vendors.length} / ${activeVendors.length}` : `${vendors.length} done`, tip: 'Vendors completed vs total' },
+              { label: 'Elapsed', value: fmtMs(stats.elapsedMs), tip: 'Wall-clock time since the audit started', mono: false },
+              { label: 'Measured calls', value: String(stats.calls), tip: 'Scrape, search, and model calls seen by telemetry', mono: false },
+              routingStat,
+              { label: 'Progress', value: activeVendors.length > 0 ? `${vendors.length} / ${activeVendors.length}` : `${vendors.length} done`, tip: 'Vendors completed vs total', mono: false },
             ].map(({ label, value, tip, mono }, i) => (
               <div key={label} className={`reveal-up d-${3 + i}`} style={{
-                borderLeft: i === 0 ? 'none' : '1px solid var(--border)',
+                borderLeft: '1px solid var(--border)',
               }}>
                 <StatBox label={label} value={value} tip={tip} mono={mono} />
               </div>

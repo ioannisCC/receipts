@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     SCRAPE_TIMEOUT_S: float = 10.0
     LLM_TIMEOUT_S: float = 45.0
     # Keep broken/cold cheap endpoints from making the UI feel stuck.
-    CHEAP_LLM_TIMEOUT_S: float = 20.0
+    CHEAP_LLM_TIMEOUT_S: float = 6.0
 
     # Akamai fallback: route all cheap-tier calls to Anthropic when Akamai is unavailable.
     CHEAP_FALLBACK_TO_PREMIUM: bool = False

@@ -7,6 +7,7 @@ Output is plain text bound to the VendorResult.advice field."""
 from __future__ import annotations
 
 from app.clients import chat, cost_usd
+from app.config import settings
 from app.schemas import Judgment, Verdict
 from app.telemetry import TelemetryBus, measure
 
@@ -51,6 +52,7 @@ async def advise(
     ]
 
     async with measure(bus, stage="advise", vendor=vendor) as m:
+        m.model = settings.PREMIUM_MODEL if settings.CHEAP_FALLBACK_TO_PREMIUM else settings.CHEAP_MODEL
         try:
             result = await chat("cheap", messages, max_tokens=300, temperature=0.3)
             m.tokens_in = result.tokens_in

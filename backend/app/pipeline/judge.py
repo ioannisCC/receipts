@@ -133,6 +133,7 @@ async def judge(
             vendor=vendor,
             claim_id=claim.claim_id,
         ) as m:
+            m.model = settings.PREMIUM_MODEL if settings.CHEAP_FALLBACK_TO_PREMIUM else settings.CHEAP_MODEL
             try:
                 result = await chat("cheap", messages, max_tokens=512, temperature=0.0)
                 m.tokens_in = result.tokens_in
@@ -157,6 +158,7 @@ async def judge(
         claim_id=claim.claim_id,
     ) as m:
         m.escalated = not naive
+        m.model = settings.PREMIUM_MODEL
         try:
             result = await chat("premium", messages, max_tokens=512, temperature=0.0)
             m.tokens_in = result.tokens_in
