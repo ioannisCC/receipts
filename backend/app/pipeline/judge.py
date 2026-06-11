@@ -55,6 +55,9 @@ def _build_user(claim: Claim, evidence: Evidence) -> str:
 
 def _strip_json(text: str) -> str:
     text = text.strip()
+    # Remove Qwen3 chain-of-thought blocks: <think>...</think>
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    text = text.strip()
     text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
     text = re.sub(r"```\s*$", "", text)
     return text.strip()

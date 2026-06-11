@@ -40,7 +40,10 @@ If no quantified claims are found, return [].
 
 
 def _strip_json(text: str) -> str:
-    """Strip markdown code fences if the model wraps its JSON output."""
+    """Strip Qwen3 think tags and markdown code fences before JSON parsing."""
+    text = text.strip()
+    # Remove Qwen3 chain-of-thought blocks: <think>...</think>
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
     text = text.strip()
     text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
     text = re.sub(r"```\s*$", "", text)
@@ -150,7 +153,7 @@ async def extract(
     async with measure(bus, stage="extract", vendor=vendor) as m:
         m.model = settings.PREMIUM_MODEL if settings.CHEAP_FALLBACK_TO_PREMIUM else settings.CHEAP_MODEL
         try:
-            result = await chat("cheap", messages, max_tokens=1024, temperature=0.0)
+            result = await chat("cheap", messages, max_tokens=2048, temperature=0.0)
             m.tokens_in = result.tokens_in
             m.tokens_out = result.tokens_out
             m.model = result.model
