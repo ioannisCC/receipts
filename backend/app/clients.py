@@ -13,6 +13,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any, Literal, Optional
 
+import orjson
 from anthropic import AsyncAnthropic
 from openai import AsyncOpenAI
 
@@ -198,6 +199,16 @@ async def generate_image(
 
     The caller is responsible for telemetry wrapping (so the stage name is the
     caller's, not generic 'magnific') and for caching."""
+    bridge_url = await _generate_image_via_command(
+        prompt,
+        model=model,
+        resolution=resolution,
+        aspect_ratio=aspect_ratio,
+        timeout_s=timeout_s,
+    )
+    if bridge_url:
+        return bridge_url
+
     import httpx
 
     api_key = settings.FREEPIK_API_KEY
@@ -244,3 +255,88 @@ async def generate_image(
 async def _sleep(s: float) -> None:
     import asyncio as _a
     await _a.sleep(s)
+
+
+async def _generate_image_via_command(
+    prompt: str,
+    *,
+    model: str,
+    resolution: str,
+    aspect_ratio: str,
+    timeout_s: float,
+) -> Optional[str]:
+    """Bridge for OAuth/MCP image generators.
+
+    HONEST_AD_IMAGE_COMMAND lets the live app call a local MCP helper without
+    baking Codex's tool runtime into FastAPI. The command receives JSON on
+    stdin and should print either a URL or JSON containing a URL.
+    """
+    command = settings.HONEST_AD_IMAGE_COMMAND.strip()
+    if not command:
+        return None
+
+    import asyncio
+    import re
+    import shlex
+
+    body = {
+        "prompt": prompt,
+        "model": model,
+        "resolution": resolution,
+        "aspect_ratio": aspect_ratio,
+        "timeout_s": timeout_s,
+    }
+
+    try:
+        args = shlex.split(command)
+        if not args:
+            return None
+        proc = await asyncio.create_subprocess_exec(
+            *args,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _stderr = await asyncio.wait_for(
+            proc.communicate(orjson.dumps(body)),
+            timeout=timeout_s,
+        )
+        if proc.returncode != 0:
+            return None
+
+        text = stdout.decode("utf-8", errors="ignore").strip()
+        if not text:
+            return None
+
+        try:
+            parsed = orjson.loads(text)
+            found = _find_url(parsed)
+            if found:
+                return found
+        except Exception:
+            pass
+
+        match = re.search(r"https?://\\S+", text)
+        return match.group(0).strip('",') if match else None
+    except Exception:
+        return None
+
+
+def _find_url(value: Any) -> Optional[str]:
+    if isinstance(value, str):
+        return value if value.startswith(("http://", "https://")) else None
+    if isinstance(value, list):
+        for item in value:
+            found = _find_url(item)
+            if found:
+                return found
+    if isinstance(value, dict):
+        for key in ("url", "image_url", "output_url"):
+            found = _find_url(value.get(key))
+            if found:
+                return found
+        for item in value.values():
+            found = _find_url(item)
+            if found:
+                return found
+    return None

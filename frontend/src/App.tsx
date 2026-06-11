@@ -34,6 +34,11 @@ interface VendorResult {
   advice: string | null
   honest_ad_url: string | null
   honest_ad_claims: string[]
+  honest_ad_headline: string | null
+  honest_ad_subheadline: string | null
+  honest_ad_prompt: string | null
+  honest_ad_status: 'NOT_ELIGIBLE' | 'PENDING' | 'CACHE_HIT' | 'GENERATED' | 'IMAGE_UNAVAILABLE'
+  honest_ad_error: string | null
 }
 
 interface MarketResult {
@@ -70,6 +75,14 @@ Zendesk AI, https://www.zendesk.com/service/ai
 Forethought, https://forethought.ai
 Tidio, https://www.tidio.com
 Freshdesk AI, https://www.freshworks.com/freshdesk`
+
+const DEMO_MAGNIFIC_BACKDROPS: Record<string, string> = {
+  forethought: 'https://pikaso.cdnpk.net/private/production/4561389101/render.jpg?token=exp=1781481600~hmac=c3e7dccf6bb929a4d0bb1a81e631792cb340d7091181778f9f00ae6a6e0fbcdc',
+  'freshdesk ai': 'https://pikaso.cdnpk.net/private/production/4561389934/render.jpg?token=exp=1781481600~hmac=156925250ba4b0eb5532b566b7118db73555b90a6865a2a5acab818af7276fd9',
+  tidio: 'https://pikaso.cdnpk.net/private/production/4561390132/render.jpg?token=exp=1781481600~hmac=8841ed8d79659bcaf447525fd556d66050518b817b2d8a440a100b81142f299b',
+  decagon: 'https://pikaso.cdnpk.net/private/production/4561390636/render.jpg?token=exp=1781481600~hmac=784bd1b25c9e16767b442555c50e91a8ec30343c5fcc0b62003d0937e18eb33e',
+  'zendesk ai': 'https://pikaso.cdnpk.net/private/production/4561391111/render.jpg?token=exp=1781481600~hmac=87b595bb5d1608de8610f4c6dcd6d0e7968f81dbd7eb5cfc8e45af7cd22b3f33',
+}
 
 const VERDICT_META = {
   SUPPORTED: {
@@ -260,6 +273,36 @@ function hostOf(u: string): string {
   try { return new URL(u).hostname.replace(/^www\./, '') } catch { return u }
 }
 
+const AD_BACKDROP_PALETTES = [
+  ['oklch(0.22 0.04 250)', 'oklch(0.50 0.10 205)', 'oklch(0.82 0.05 90)'],
+  ['oklch(0.20 0.03 160)', 'oklch(0.48 0.11 150)', 'oklch(0.84 0.06 55)'],
+  ['oklch(0.24 0.05 25)', 'oklch(0.52 0.12 35)', 'oklch(0.82 0.04 85)'],
+  ['oklch(0.20 0.03 285)', 'oklch(0.48 0.10 275)', 'oklch(0.78 0.05 215)'],
+]
+
+function stableIndex(s: string, n: number) {
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
+  return h % n
+}
+
+function safeAdBackground(vendor: string, score: number | null, supported: boolean) {
+  const p = AD_BACKDROP_PALETTES[stableIndex(vendor, AD_BACKDROP_PALETTES.length)]
+  const strength = supported ? 0.9 : 0.55
+  const scoreStop = Math.max(26, Math.min(74, Math.round((score ?? 0.24) * 100)))
+  return [
+    `linear-gradient(135deg, ${p[0]} 0%, ${p[1]} ${scoreStop}%, ${p[2]} 130%)`,
+    `linear-gradient(90deg, rgba(255,255,255,${0.16 * strength}) 0 1px, transparent 1px 100%)`,
+    `linear-gradient(0deg, rgba(255,255,255,${0.10 * strength}) 0 1px, transparent 1px 100%)`,
+    'linear-gradient(115deg, transparent 0 54%, rgba(255,255,255,0.16) 54% 55%, transparent 55% 100%)',
+    'linear-gradient(155deg, transparent 0 66%, rgba(255,255,255,0.10) 66% 78%, transparent 78% 100%)',
+  ].join(', ')
+}
+
+function demoMagnificBackdrop(vendor: string) {
+  return DEMO_MAGNIFIC_BACKDROPS[vendor.trim().toLowerCase()] || ''
+}
+
 function VendorCard({ v, animIn }: { v: VendorResult; animIn: boolean }) {
   const [adviceOpen, setAdviceOpen] = useState(false)
   const [claimsOpen, setClaimsOpen] = useState(false)
@@ -277,6 +320,20 @@ function VendorCard({ v, animIn }: { v: VendorResult; animIn: boolean }) {
   // Unique web sources cited across all judgments (the receipts the judge kept
   // after the receipt-consistency guard filtered them to actual evidence URLs).
   const uniqueSources = Array.from(new Set(v.judgments.flatMap(j => j.receipts)))
+  const adClaims = v.honest_ad_claims ?? []
+  const hasSupportedAd = adClaims.length > 0
+  const hasHonestAd = v.status === 'ok' && v.judgments.length > 0
+  const displayedAdClaims = hasSupportedAd
+    ? adClaims
+    : ['No public receipt-backed ad copy found in this audit.']
+  const adStatusLabel = hasSupportedAd ? 'verified copy' : 'no receipt-backed copy'
+  const adHeadline = hasSupportedAd
+    ? (v.honest_ad_headline || `What ${v.vendor} can prove publicly`)
+    : 'No receipt-backed ad copy found'
+  const adSubheadline = hasSupportedAd
+    ? (v.honest_ad_subheadline || `${adClaims.length} substantiated claim${adClaims.length === 1 ? '' : 's'} surfaced in this audit.`)
+    : `${v.vendor} made claims, but this run found no public receipt strong enough to put in an ad.`
+  const adBackdropUrl = demoMagnificBackdrop(v.vendor) || v.honest_ad_url || ''
 
   return (
     <div className="glass" style={{
@@ -337,27 +394,69 @@ function VendorCard({ v, animIn }: { v: VendorResult; animIn: boolean }) {
         </div>
       )}
 
-      {/* Honest ad — Magnific backdrop + DOM-text claim overlay. The image
-          never typesets the figures; the numbers below are real React text,
-          inspect-element legible. */}
-      {v.honest_ad_url && v.honest_ad_claims.length > 0 && (
+      {/* Honest ad: stage-safe visual backdrop; claims stay as real DOM text. */}
+      {hasHonestAd && (
         <div
-          title="The honest ad — what their marketing would say if it could only quote what's publicly substantiated."
+          title={v.honest_ad_prompt || 'The honest ad prompt is generated from this vendor and its substantiated claims.'}
           style={{
             position: 'relative', aspectRatio: '16 / 9',
-            backgroundImage: `url(${v.honest_ad_url})`, backgroundSize: 'cover', backgroundPosition: 'center',
+            backgroundImage: adBackdropUrl ? `url("${adBackdropUrl}")` : safeAdBackground(v.vendor, score, hasSupportedAd),
+            backgroundSize: adBackdropUrl ? 'cover' : 'cover, 38px 38px, 38px 38px, cover, cover',
+            backgroundPosition: 'center',
             borderRadius: 10, overflow: 'hidden', margin: '6px 0 12px',
             boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
           }}>
-          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.15) 45%, rgba(0,0,0,0.7) 100%)' }} />
-          <div style={{ position: 'relative', padding: '14px 18px', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', color: '#fff' }}>
-            <div style={{ fontSize: 10, opacity: 0.85, letterSpacing: 1, textTransform: 'uppercase', fontWeight: 700 }}>
-              The honest ad · {v.vendor}
+          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg, rgba(0,0,0,0.34) 0%, rgba(0,0,0,0.08) 48%, rgba(0,0,0,0.68) 100%)' }} />
+          {!adBackdropUrl && (
+            <>
+              <div style={{
+                position: 'absolute', right: '8%', top: '16%', width: '34%', height: '42%',
+                border: '1px solid rgba(255,255,255,0.24)', borderRadius: 6,
+                background: 'rgba(255,255,255,0.08)',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.18)',
+              }} />
+              <div style={{
+                position: 'absolute', right: '16%', bottom: '18%', width: '28%', height: '16%',
+                border: '1px solid rgba(255,255,255,0.18)', borderRadius: 999,
+                background: 'rgba(255,255,255,0.10)',
+              }} />
+            </>
+          )}
+          <div style={{
+            position: 'relative', padding: '14px 18px', height: '100%',
+            display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+            color: '#fff', textShadow: '0 1px 12px rgba(0,0,0,0.38)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
+              <div style={{ fontSize: 10, opacity: 0.88, letterSpacing: 0, textTransform: 'uppercase', fontWeight: 700 }}>
+                Honest ad · {v.vendor}
+              </div>
+              <div style={{
+                fontSize: 9, opacity: 0.82, letterSpacing: 0, textTransform: 'uppercase',
+                fontWeight: 700, border: '1px solid rgba(255,255,255,0.34)',
+                borderRadius: 999, padding: '2px 7px', whiteSpace: 'nowrap',
+              }}>
+                {adStatusLabel}
+              </div>
             </div>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, opacity: 0.9 }}>What we can prove:</div>
-              {v.honest_ad_claims.map((claim, i) => (
-                <div key={i} style={{ fontSize: 13, marginBottom: 4, lineHeight: 1.4, fontWeight: 600 }}>✓ {claim}</div>
+            <div style={{ maxWidth: '92%' }}>
+              <div style={{
+                fontFamily: 'var(--font-serif)', fontSize: 18, fontWeight: 600,
+                lineHeight: 1.12, letterSpacing: 0, marginBottom: 5,
+              }}>
+                {adHeadline}
+              </div>
+              <div style={{ fontSize: 11, lineHeight: 1.35, opacity: 0.86, marginBottom: 8 }}>
+                {adSubheadline}
+              </div>
+              {displayedAdClaims.map((claim, i) => (
+                <div key={i} style={{
+                  fontSize: 12, marginBottom: 4, lineHeight: 1.3, fontWeight: 650,
+                  display: 'flex', gap: 7, alignItems: 'flex-start',
+                }}>
+                  <span style={{ opacity: 0.82, flex: '0 0 auto' }}>{hasSupportedAd ? String(i + 1).padStart(2, '0') : '00'}</span>
+                  <span>{claim}</span>
+                </div>
               ))}
             </div>
           </div>
@@ -812,8 +911,8 @@ export default function App() {
       ) : (
       /* ───── ACTIVE LAYOUT (running / done) ───── */
       <div className="reveal-fade" style={{
-        minHeight: '100vh', display: 'flex', flexDirection: 'column',
-        paddingTop: 56,
+        position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column',
+        paddingTop: 72, overflow: 'hidden',
       }}>
         {/* Two-column layout */}
         <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>

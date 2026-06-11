@@ -18,5 +18,7 @@ frontend/package-lock.json
 
 # Internal — never publish
 CLAUDE.md
+AGENTS.md
 reference/
 *.docx
+.codex/

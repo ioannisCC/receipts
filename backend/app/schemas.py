@@ -17,6 +17,14 @@ class Verdict(str, Enum):
     NO_PUBLIC_RECEIPT_FOUND = "NO_PUBLIC_RECEIPT_FOUND"
 
 
+class HonestAdStatus(str, Enum):
+    NOT_ELIGIBLE = "NOT_ELIGIBLE"
+    PENDING = "PENDING"
+    CACHE_HIT = "CACHE_HIT"
+    GENERATED = "GENERATED"
+    IMAGE_UNAVAILABLE = "IMAGE_UNAVAILABLE"
+
+
 class Claim(BaseModel):
     claim_id: str
     claim: str
@@ -76,6 +84,11 @@ class VendorResult(BaseModel):
     # React overlays on top of it as crisp DOM text (never pixels).
     honest_ad_url: Optional[str] = None
     honest_ad_claims: list[str] = Field(default_factory=list)
+    honest_ad_headline: Optional[str] = None
+    honest_ad_subheadline: Optional[str] = None
+    honest_ad_prompt: Optional[str] = None
+    honest_ad_status: HonestAdStatus = HonestAdStatus.NOT_ELIGIBLE
+    honest_ad_error: Optional[str] = None
 
 
 class MarketResult(BaseModel):
