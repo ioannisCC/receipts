@@ -50,12 +50,28 @@ MAGNIFIC_RESOLUTION = "1k"
 MAGNIFIC_ASPECT = "widescreen_16_9"
 
 
-# Vendor backdrop overrides — pre-generated Magnific URLs for the demo preset
-# vendors. Used when a vendor has zero SUPPORTED claims (so it falls below the
-# regular eligibility bar) so the card still shows a vendor-styled backdrop
-# instead of a blank tile. The overlay text in React stays honest about what we
-# could/couldn't substantiate.
+# Vendor backdrop overrides — pre-generated, hand-verified Magnific URLs for
+# the demo preset vendors. These take precedence over both the per-run cache
+# and live Magnific generation. Rationale:
+#   - guarantees Railway/prod renders the *vetted* poster (no Apple-logo
+#     regression, no surprise output)
+#   - avoids any Magnific credit burn during the demo
+#   - works without OAuth/API-key on the prod host
+#
+# Inclusion rule for the dict:
+#   - VERIFIED safe image (no logos, no text, no IP smells)
+#   - vendor either has a SUPPORTED claim worth featuring (Forethought,
+#     Freshdesk AI), or is a known preset whose card needs *some* vendor-styled
+#     backdrop when it scores zero (Decagon, Intercom Fin, Zendesk AI — the
+#     overlay text in React makes the "0 with public receipts" line honest)
+#
+# Deliberately NOT here: Tidio. Even if a run surfaces a SUPPORTED claim, we're
+# not featuring it for legal/clarity reasons.
 VENDOR_BACKDROP_OVERRIDES: dict[str, str] = {
+    # Eligible vendors — verified regenerated posters (no logos)
+    "Forethought": "https://pikaso.cdnpk.net/private/production/4561070247/render.jpg?token=exp=1781481600~hmac=84a7c954623a073fc7519e06574df918a8962fe97505ee8562c9f05ce549776d",
+    "Freshdesk AI": "https://pikaso.cdnpk.net/private/production/4561070599/render.jpg?token=exp=1781481600~hmac=cf7c789e18f9625f7fdc9c72f1499ad868eedc4ad3de387ebf143542895e0f18",
+    # Non-eligible presets — vendor-styled backdrops, "What X markets" overlay
     "Decagon": "https://pikaso.cdnpk.net/private/production/4561493153/render.jpg?token=exp=1781481600~hmac=105eac59503c0417cb07395bed054c5862fec90f5e20e3b899607a5826d9ce6a",
     "Intercom Fin": "https://pikaso.cdnpk.net/private/production/4561493733/render.jpg?token=exp=1781481600~hmac=823441b618940b8a0222ef406c14ba436ec31893772b5b0aabfa54b288045ddf",
     "Zendesk AI": "https://pikaso.cdnpk.net/private/production/4561493979/render.jpg?token=exp=1781481600~hmac=53f418670fb88b9ee63193782e08681941260348431e8d9873bc4f8765db0056",
@@ -181,6 +197,18 @@ def prepare_honest_ad(vendor: VendorResult) -> bool:
         f"{len(supported)} receipt-backed {theme} claim"
         f"{'' if len(supported) == 1 else 's'} surfaced in this audit."
     )
+
+    # Override-first for eligible vendors too: if we have a verified poster
+    # baked in, use it instead of burning Magnific credits or risking a bad
+    # regen on stage. This is what makes Railway/prod actually render the
+    # safe, vetted image without OAuth.
+    override_url = VENDOR_BACKDROP_OVERRIDES.get(vendor.vendor)
+    if override_url:
+        vendor.honest_ad_url = override_url
+        vendor.honest_ad_status = HonestAdStatus.CACHE_HIT
+        vendor.honest_ad_error = None
+        return False  # already done — orchestrator's loop will skip live gen
+
     vendor.honest_ad_prompt = _prompt_for(vendor, supported)
     vendor.honest_ad_status = HonestAdStatus.PENDING
     vendor.honest_ad_error = None
