@@ -1,6 +1,12 @@
 import { useState, useEffect, useRef, useCallback, MouseEvent as RMouseEvent } from 'react'
 import { ReceiptsLogo } from './components/ReceiptsLogo'
 
+// Backend API base. Empty string keeps the Vite dev proxy working locally
+// (relative /audit hits the Vite proxy → localhost:8000). On Railway the
+// frontend is a static build that must call the backend's public URL
+// directly, set via VITE_API_URL at build time.
+const API_BASE = (((import.meta as unknown as { env?: { VITE_API_URL?: string } }).env?.VITE_API_URL) || '').replace(/\/+$/, '')
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 interface TelemetryEvent {
@@ -630,7 +636,7 @@ export default function App() {
 
   const fetchResults = useCallback(async (id: string) => {
     try {
-      const res = await fetch(`/audit/${id}/results`)
+      const res = await fetch(`${API_BASE}/audit/${id}/results`)
       if (!res.ok) return
       const data: MarketResult = await res.json()
       if (!data.vendors) return
@@ -661,7 +667,7 @@ export default function App() {
     }, 250)
 
     try {
-      const res = await fetch('/audit', {
+      const res = await fetch(`${API_BASE}/audit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -673,7 +679,7 @@ export default function App() {
       })
       const accepted = await res.json()
       pollRef.current = setInterval(() => fetchResults(accepted.run_id), 3000)
-      const es = new EventSource(accepted.stream_url)
+      const es = new EventSource(`${API_BASE}${accepted.stream_url}`)
       evtRef.current = es
       es.addEventListener('telemetry', (e) => {
         const ev: TelemetryEvent = JSON.parse(e.data)
