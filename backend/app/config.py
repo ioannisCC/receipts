@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     AKAMAI_INFERENCE_URL: str = "http://REPLACE_AT_KICKOFF:8080/v1"
     AKAMAI_TOKEN: str = ""
     CHEAP_MODEL: str = "Qwen/Qwen3-8B-FP8"
+    CHEAP_INPUT_PER_MTOK: float = 0.05
+    CHEAP_OUTPUT_PER_MTOK: float = 0.10
+    CHEAP_ATTEMPT_COST_USD: float = 0.0002
 
     ANTHROPIC_API_KEY: str = ""
     PREMIUM_MODEL: str = "claude-sonnet-4-6"

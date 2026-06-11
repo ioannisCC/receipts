@@ -10,7 +10,7 @@ import hashlib
 import json
 import re
 
-from app.clients import chat, cost_usd
+from app.clients import attempt_cost_usd, chat, cost_usd
 from app.config import settings
 from app.schemas import Claim
 from app.telemetry import TelemetryBus, measure
@@ -154,7 +154,10 @@ async def extract(
             m.tokens_in = result.tokens_in
             m.tokens_out = result.tokens_out
             m.model = result.model
-            m.cost_usd = cost_usd(result.model, result.tokens_in, result.tokens_out)
+            m.cost_usd = max(
+                cost_usd(result.model, result.tokens_in, result.tokens_out),
+                attempt_cost_usd(result.model),
+            )
 
             raw = _strip_json(result.text)
             data = json.loads(raw)
@@ -180,4 +183,5 @@ async def extract(
                     continue
             return claims
         except Exception:
+            m.cost_usd = attempt_cost_usd(settings.CHEAP_MODEL)
             return _fallback_extract(markdown, vendor)

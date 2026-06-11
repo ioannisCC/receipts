@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import re
 
-from app.clients import chat, cost_usd
+from app.clients import attempt_cost_usd, chat, cost_usd
 from app.config import settings
 from app.schemas import Claim, Evidence, Judgment, Verdict
 from app.telemetry import TelemetryBus, measure
@@ -139,7 +139,10 @@ async def judge(
                 m.tokens_in = result.tokens_in
                 m.tokens_out = result.tokens_out
                 m.model = result.model
-                m.cost_usd = cost_usd(result.model, result.tokens_in, result.tokens_out)
+                m.cost_usd = max(
+                    cost_usd(result.model, result.tokens_in, result.tokens_out),
+                    attempt_cost_usd(result.model),
+                )
 
                 judgment = _parse_judgment(
                     result.text, claim.claim_id, escalated=False,
@@ -148,6 +151,7 @@ async def judge(
                 if judgment and judgment.confidence >= threshold:
                     return judgment
             except Exception:
+                m.cost_usd = attempt_cost_usd(settings.CHEAP_MODEL)
                 pass
 
     # --- premium escalation ---

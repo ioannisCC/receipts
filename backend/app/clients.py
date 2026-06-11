@@ -24,12 +24,13 @@ Tier = Literal["cheap", "premium"]
 
 # COST TABLE — verified at platform.claude.com on 2026-06-10.
 # Sonnet 4.6: $3 / MTok input, $15 / MTok output (base, no cache, no batch).
-# Cheap tier (Akamai/Qwen3-8B-FP8 on shared vLLM cluster) is imputed at $0.0 per
-# token: on hackathon credits / our GPU the marginal per-token cost is zero. This
-# is the honest framing AND it maximizes race-screen contrast — premium burns real
-# dollars on stage, cheap does not.
+# Cheap tier is imputed, not provider-billed: it gives the dashboard a small
+# visible infrastructure cost even when the Akamai endpoint is running on credits.
 COST_TABLE: dict[str, dict[str, float]] = {
-    settings.CHEAP_MODEL: {"input_per_mtok": 0.0, "output_per_mtok": 0.0},
+    settings.CHEAP_MODEL: {
+        "input_per_mtok": settings.CHEAP_INPUT_PER_MTOK,
+        "output_per_mtok": settings.CHEAP_OUTPUT_PER_MTOK,
+    },
     settings.PREMIUM_MODEL: {"input_per_mtok": 3.0, "output_per_mtok": 15.0},
 }
 
@@ -42,6 +43,12 @@ def cost_usd(model: str, tokens_in: int, tokens_out: int) -> float:
         tokens_in / 1_000_000.0 * rates["input_per_mtok"]
         + tokens_out / 1_000_000.0 * rates["output_per_mtok"]
     )
+
+
+def attempt_cost_usd(model: str) -> float:
+    if model == settings.CHEAP_MODEL:
+        return settings.CHEAP_ATTEMPT_COST_USD
+    return 0.0
 
 
 @dataclass
